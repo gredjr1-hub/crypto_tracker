@@ -112,7 +112,7 @@ def get_google_trend(keyword):
         if not df.empty:
             return int(df[keyword].iloc[-1])
     except Exception: pass
-    return None # Return None when rate-limited so it doesn't falsely anchor to 50
+    return None 
 
 fng_val, fng_class = get_fear_and_greed()
 
@@ -228,7 +228,10 @@ def get_crypto_data(port_dict, global_fng_val):
         obv_trend = "Neutral"
         
         if not hist.empty:
-            ath = hist['Close'].max()
+            # --- 2-YEAR ATH CALCULATION ---
+            two_years_ago = hist.index[-1] - timedelta(days=730)
+            hist_2y = hist[hist.index >= two_years_ago]
+            ath = hist_2y['Close'].max() if not hist_2y.empty else hist['Close'].max()
             drawdown = ((current_price - ath) / ath) * 100 if ath > 0 else 0
             
             hist['200_WMA'] = hist['Close'].rolling(window=1400).mean()
@@ -256,7 +259,7 @@ def get_crypto_data(port_dict, global_fng_val):
                 macd_val, sig_val = macd_line.iloc[-1], signal_line.iloc[-1]
                 bb_upper, bb_lower = upper_b.iloc[-1], lower_b.iloc[-1]
 
-        # --- THE HARSHER CONTINUOUS CRYPTO ALGORITHM ---
+        # --- THE ALGORITHM ---
         score = 30.0 
         risk_points = 0
         
@@ -271,34 +274,33 @@ def get_crypto_data(port_dict, global_fng_val):
         if tier == 4: risk_points += 1 
         if tier == 3: risk_points += 1 
 
-        # 0. Fundamental & Staking (Supply Shock)
+        # 0. Fundamental & Macro Targets
         if meta['utility'] >= 85: score += 5; breakdown.append(f"🧠 **High Utility:** +5 pts")
         elif meta['utility'] < 50: score -= 10; breakdown.append(f"📉 **Low Utility/Meme:** -10 pts")
             
         if meta['decentralization'] >= 80: score += 5; breakdown.append(f"🌐 **Highly Decentralized:** +5 pts")
         elif meta['decentralization'] <= 50: score -= 10; breakdown.append(f"🐋 **Centralized/Whale Heavy:** -10 pts")
             
-        if meta['staked'] >= 50: score += 10; breakdown.append(f"🔒 **Massive Staking Lockup ({meta['staked']}%):** +10 pts (Supply Shock Risk)")
+        if meta['staked'] >= 50: score += 10; breakdown.append(f"🔒 **Massive Staking Lockup ({meta['staked']}%):** +10 pts (Supply Shock)")
         elif meta['staked'] >= 20: score += 5; breakdown.append(f"🔒 **Healthy Staking Lockup ({meta['staked']}%):** +5 pts")
             
-        # CONTINUOUS MACRO UPSIDE SCALING
         if meta['target'] > 0:
             upside = ((meta['target'] - current_price) / current_price) * 100
             if upside <= 0:
                 upside_pts = -15
                 breakdown.append(f"🚨 **Above Macro Target ({upside:+.1f}%):** -15 pts (Overvalued)")
             elif upside <= 30:
-                upside_pts = -15 + (upside / 30.0) * 15 # Scales -15 to 0
+                upside_pts = -15 + (upside / 30.0) * 15
                 breakdown.append(f"⚠️ **Near Macro Target ({upside:+.1f}%):** {upside_pts:+.1f} pts (Limited Upside)")
             elif upside <= 200:
-                upside_pts = ((upside - 30) / 170.0) * 15 # Scales 0 to +15
+                upside_pts = ((upside - 30) / 170.0) * 15
                 breakdown.append(f"✅ **Healthy Upside ({upside:+.1f}%):** +{upside_pts:.1f} pts")
             else:
                 upside_pts = 15
                 breakdown.append(f"🚀 **Massive Upside Potential ({upside:+.1f}%):** +15 pts")
             score += upside_pts
 
-        # 1. Retail FOMO (Google Trends Penalty - Only runs if API wasn't blocked)
+        # 1. Retail FOMO (Google Trends Penalty)
         if google_fomo is not None:
             if google_fomo >= 80:
                 score -= 20; risk_points += 1
@@ -311,10 +313,10 @@ def get_crypto_data(port_dict, global_fng_val):
         else:
             breakdown.append(f"⚠️ **Retail FOMO:** [Google API Rate Limited/Blocked]")
 
-        # 2. Historical Drawdown
+        # 2. Historical Drawdown (2-Year Rolling)
         dd_abs = abs(drawdown)
         if tier <= 2:
-            if dd_abs <= 15: dd_pts = -10; breakdown.append(f"❌ **Near ATH ({drawdown:.1f}%):** -10 pts (FOMO Zone)")
+            if dd_abs <= 15: dd_pts = -10; breakdown.append(f"❌ **Near 2Y ATH ({drawdown:.1f}%):** -10 pts (FOMO Zone)")
             elif dd_abs <= 40: dd_pts = 0; breakdown.append(f"➖ **Fair Value ({drawdown:.1f}%):** 0 pts")
             elif dd_abs <= 75: dd_pts = 10; breakdown.append(f"✅ **Deep Value ({drawdown:.1f}%):** +10 pts")
             else: dd_pts = 20; breakdown.append(f"✅ **Maximum Capitulation ({drawdown:.1f}%):** +20 pts")
@@ -327,7 +329,7 @@ def get_crypto_data(port_dict, global_fng_val):
         else: 
             if dd_abs > 80: score -= 20; risk_points += 2; breakdown.append(f"🚨 **Dead Altcoin Risk ({drawdown:.1f}%):** -20 pts [+2 Risk]")
 
-        # 3. Distance from 200 SMA (Brutal Overextension Penalties)
+        # 3. Distance from 200 SMA
         if sma_200 != 0 and current_price > 0:
             sma_dist = ((current_price - sma_200) / sma_200) * 100
             if sma_dist > 40: sma_pts = -20; breakdown.append(f"❌ **SMA Ext ({sma_dist:+.1f}%):** -20 pts (Severely Overextended)")
@@ -469,7 +471,7 @@ def render_score_card(coin, today_date, score_history=None, is_watchlist=False, 
         st.write(f"**Price:** {price_format.format(coin.get('Price', 0.0))}")
         dd = coin.get('Drawdown', 0)
         ath = coin.get('ATH', 0)
-        st.write(f"**ATH:** {price_format.format(ath)}")
+        st.write(f"**2Y ATH:** {price_format.format(ath)}")
         dd_color = "green" if dd < -60 else ("orange" if dd < -30 else "red")
         st.markdown(f"**Drawdown:** :{dd_color}[{dd:.1f}%]")
         
