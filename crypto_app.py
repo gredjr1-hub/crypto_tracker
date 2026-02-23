@@ -23,8 +23,26 @@ st.set_page_config(page_title="Crypto Quant Command Center", layout="wide", page
 # --- PROJECT PROMISE & UTILITY TIERS ---
 CRYPTO_TIERS = {
     'BTC': 1, 'ETH': 1, 
-    'SOL': 2, 'ADA': 2, 'AVAX': 2, 'DOT': 2, 'LINK': 2, 'MATIC': 2, 'NEAR': 2, 'APT': 2, 'OP': 2, 'INJ': 2, 'XRP': 2, 'BNB': 2, 'TRX': 2, 'LTC': 2, 
+    'SOL': 2, 'ADA': 2, 'AVAX': 2, 'DOT': 2, 'LINK': 2, 'MATIC': 2, 'NEAR': 2, 'APT': 2, 'OP': 2, 'INJ': 2, 'XRP': 2, 'BNB': 2, 'TRX': 2, 'LTC': 2, 'SUI': 2, 'TAO': 2,
     'DOGE': 3, 'SHIB': 3, 'PEPE': 3, 'FLOKI': 3, 'BONK': 3, 'WIF': 3 
+}
+
+# --- QUALITATIVE FUNDAMENTAL DATA ---
+# Utility Score (0-100): Real-world use case, tech capability, adoption
+# Decentralization Score (0-100): Token distribution, node counts, VC/Whale concentration
+CRYPTO_META = {
+    'BTC': {'desc': "The first decentralized digital currency. Acting as a global, permissionless store of value and digital gold.", 'utility': 95, 'decentralization': 100},
+    'ETH': {'desc': "The leading smart contract platform. The backbone of DeFi, NFTs, and global decentralized applications.", 'utility': 98, 'decentralization': 85},
+    'SOL': {'desc': "High-speed, low-cost monolithic Layer 1 blockchain optimized for mass adoption and high-frequency trading.", 'utility': 90, 'decentralization': 55}, # Penalized for heavy VC/insider allocation
+    'SUI': {'desc': "Next-gen Layer 1 built with the Move programming language by former Meta engineers. Highly scalable.", 'utility': 85, 'decentralization': 50}, # Heavy insider unlocks
+    'TAO': {'desc': "Bittensor. A decentralized, open-source network that commoditizes AI machine learning intelligence.", 'utility': 92, 'decentralization': 75},
+    'LINK': {'desc': "The industry standard decentralized oracle network, feeding real-world data into smart contracts securely.", 'utility': 95, 'decentralization': 70},
+    'AVAX': {'desc': "Highly scalable, highly customizable smart contract platform featuring subnets for institutional adoption.", 'utility': 85, 'decentralization': 65},
+    'ADA': {'desc': "Peer-reviewed, academic-driven Proof of Stake blockchain focused on security and global financial inclusion.", 'utility': 75, 'decentralization': 80},
+    'XRP': {'desc': "Legacy payment protocol designed for cross-border institutional and bank transfers.", 'utility': 70, 'decentralization': 40}, # Highly centralized by Ripple
+    'BNB': {'desc': "The native utility token of the Binance ecosystem, fueling the BNB Smart Chain and offering exchange discounts.", 'utility': 80, 'decentralization': 30}, # Effectively centralized by Binance
+    'DOGE': {'desc': "The original meme cryptocurrency. Features its own Proof of Work blockchain but lacks smart contract utility.", 'utility': 30, 'decentralization': 75}, # High wallet concentration limits decen score
+    'SHIB': {'desc': "An ERC-20 meme token attempting to build a broader DeFi ecosystem (Shibarium).", 'utility': 35, 'decentralization': 60}
 }
 
 # --- DATA LOADERS ---
@@ -136,8 +154,6 @@ if st.session_state.crypto_portfolio:
                 st.rerun()
 
 # --- QUANT DATA FETCHING ENGINE ---
-timeframes = {'1M': 30, '3M': 90, '6M': 180, '1Y': 365, '5Y': 1825}
-
 @st.cache_data(ttl=900) 
 def get_crypto_data(port_dict, global_fng_val):
     if not port_dict: return [], {}, 0 
@@ -199,11 +215,24 @@ def get_crypto_data(port_dict, global_fng_val):
         risk_points = 0
         
         tier = CRYPTO_TIERS.get(display_ticker, 4)
+        meta = CRYPTO_META.get(display_ticker, {'desc': 'No fundamental data available.', 'utility': 50, 'decentralization': 50})
+        
         tier_str = "Bluechip" if tier == 1 else "Utility/L1" if tier == 2 else "Meme" if tier == 3 else "Speculative/Alt"
         breakdown = [f"**Base Score:** 50 pts", f"🧬 **Project Classification:** Tier {tier} ({tier_str})"]
         
         if tier == 4: risk_points += 1 
         if tier == 3: risk_points += 1 
+
+        # 0. Fundamental Qualitatiave Adjustments
+        if meta['utility'] >= 85: 
+            score += 5; breakdown.append(f"🧠 **High Utility ({meta['utility']}):** +5 pts")
+        elif meta['utility'] < 50: 
+            score -= 5; breakdown.append(f"📉 **Low Utility/Meme ({meta['utility']}):** -5 pts")
+            
+        if meta['decentralization'] >= 80: 
+            score += 5; breakdown.append(f"🌐 **Highly Decentralized ({meta['decentralization']}):** +5 pts")
+        elif meta['decentralization'] <= 50: 
+            score -= 5; breakdown.append(f"🐋 **Centralized/Whale Heavy ({meta['decentralization']}):** -5 pts")
 
         # 1. Historical Drawdown (Continuous Scaling)
         dd_abs = abs(drawdown)
@@ -237,7 +266,7 @@ def get_crypto_data(port_dict, global_fng_val):
             else:
                 breakdown.append(f"➖ **Altcoin Drawdown ({drawdown:.1f}%):** 0 pts")
 
-        # 2. Distance from 200 SMA (Continuous Mapping)
+        # 2. Distance from 200 SMA
         if sma_200 != 0 and current_price > 0:
             sma_dist = ((current_price - sma_200) / sma_200) * 100
             if sma_dist > 60:
@@ -263,7 +292,7 @@ def get_crypto_data(port_dict, global_fng_val):
             else:
                 score -= 5; breakdown.append("❌ **Death Cross:** -5 pts")
 
-        # 3. RSI Momentum (Tiered Spectrum)
+        # 3. RSI Momentum
         if isinstance(rsi_14, (float, int)):
             if rsi_14 < 30: rsi_pts = 15
             elif rsi_14 < 40: rsi_pts = 10
@@ -274,7 +303,7 @@ def get_crypto_data(port_dict, global_fng_val):
             score += rsi_pts
             breakdown.append(f"{'✅' if rsi_pts > 0 else '❌' if rsi_pts < 0 else '➖'} **RSI ({rsi_14}):** {rsi_pts:+} pts")
 
-        # 4. Bollinger Bands Positioning (Spectrum)
+        # 4. Bollinger Bands Positioning
         if isinstance(bb_upper, (float, int)) and isinstance(bb_lower, (float, int)) and bb_upper != bb_lower:
             bb_pos = ((current_price - bb_lower) / (bb_upper - bb_lower)) * 100
             if bb_pos < 0: bb_pts = 10
@@ -295,7 +324,7 @@ def get_crypto_data(port_dict, global_fng_val):
             if macd_val > sig_val: score += 5; breakdown.append("✅ **MACD:** +5 pts (Bullish)")
             else: score -= 5; breakdown.append("❌ **MACD:** -5 pts (Bearish)")
 
-        # 6. Global Sentiment Modifier (Continuous Contrarian Rule)
+        # 6. Global Sentiment Modifier
         fng_adj = (50 - global_fng_val) * 0.2 
         score += fng_adj
         breakdown.append(f"{'✅' if fng_adj > 0 else '❌' if fng_adj < 0 else '➖'} **F&G Contrarian ({global_fng_val}):** {fng_adj:+.1f} pts")
@@ -323,6 +352,7 @@ def get_crypto_data(port_dict, global_fng_val):
             'Ticker': display_ticker, 'Val': val, 'Price': current_price, 'Shares': shares, 'Avg': avg_price,
             'Drawdown': drawdown, 'ATH': ath, 'SMA_50': sma_50, 'SMA_200': sma_200,
             'RSI': rsi_14, 'MACD': macd_val, 'MACD_Sig': sig_val, 'Vol': volatility, 'Tier': tier, 'OBV': obv_trend,
+            'Meta_Desc': meta['desc'], 'Meta_Util': meta['utility'], 'Meta_Decen': meta['decentralization'],
             'Score': int(score), 'Decision': decision, 'D_Color': d_color, 'Risk': risk_lvl, 'R_Color': r_color, 'Risk_Pts': risk_points,
             'Upper_BB': bb_upper, 'Lower_BB': bb_lower,
             'Breakdown': breakdown
@@ -348,7 +378,6 @@ def render_score_card(coin, today_date, score_history=None, is_watchlist=False, 
     with title_col: 
         st.markdown(f"### **{ticker}** <span style='font-size: 14px; color: gray;'>(Tier {coin['Tier']})</span>", unsafe_allow_html=True)
         
-        # --- WHALE INSPECTOR HUB ---
         arkham_url = f"https://platform.arkhamintelligence.com/explorer/token/{ticker.lower()}"
         dune_url = f"https://dune.com/search?q={ticker}&time_range=all"
         
@@ -359,8 +388,7 @@ def render_score_card(coin, today_date, score_history=None, is_watchlist=False, 
                 <a href='{arkham_url}' target='_blank' style='text-decoration: none;'>🐋 Arkham</a>
                 <a href='{dune_url}' target='_blank' style='text-decoration: none;'>📊 Dune</a>
             </div>
-            """, 
-            unsafe_allow_html=True
+            """, unsafe_allow_html=True
         )
         
     with btn_col:
@@ -409,10 +437,8 @@ def render_score_card(coin, today_date, score_history=None, is_watchlist=False, 
         
     with sub2:
         st.write(f"**RSI:** {coin['RSI']}")
-        
         obv_color = "green" if coin['OBV'] == "Accumulating" else "red"
         st.markdown(f"**Whale Vol:** :{obv_color}[{coin['OBV']}]")
-        
         sma50, sma200 = coin.get('SMA_50', 0), coin.get('SMA_200', 0)
         cross = "Golden" if sma50 > sma200 else "Death"
         cross_color = "green" if cross == "Golden" else "red"
@@ -434,12 +460,31 @@ def render_score_card(coin, today_date, score_history=None, is_watchlist=False, 
         )
         st.markdown(html_string, unsafe_allow_html=True)
 
-# --- UI HELPER: FULL ROW WITH CHARTS ---
+# --- UI HELPER: FULL ROW WITH NEW LAYOUT ---
 def draw_crypto_row(coin, histories, today_date, is_watchlist=False, hide_dollars=False, score_history=None):
-    cols = st.columns([1.6, 1, 1, 1, 1, 1]) 
+    # New Layout: 1.5 (Scorecard) | 1.5 (Fundamentals) | 3 (Single Interactive Chart)
+    cols = st.columns([1.5, 1.5, 3]) 
     
     with cols[0]:
         render_score_card(coin, today_date, score_history, is_watchlist, hide_dollars)
+        
+    with cols[1]:
+        st.markdown("### 🧬 Project Fundamentals")
+        st.markdown(f"<p style='font-size: 14px; color: gray; margin-bottom:15px;'>{coin['Meta_Desc']}</p>", unsafe_allow_html=True)
+        
+        util_val = coin['Meta_Util']
+        util_color = "green" if util_val >= 80 else ("orange" if util_val >= 50 else "red")
+        st.markdown(f"**Utility & Tech Score:** :{util_color}[**{util_val}/100**]")
+        st.progress(util_val / 100)
+        
+        decen_val = coin['Meta_Decen']
+        decen_color = "green" if decen_val >= 75 else ("orange" if decen_val >= 50 else "red")
+        st.markdown(f"**Decentralization Score:** :{decen_color}[**{decen_val}/100**]")
+        st.progress(decen_val / 100)
+        
+        # Explain the decentralization score slightly
+        if decen_val <= 50:
+            st.caption("⚠️ *Warning: High token concentration among insiders/whales or VC control.*")
             
     ticker = coin['Ticker']
     yf_ticker = f"{ticker}-USD" if not ticker.endswith("-USD") else ticker
@@ -457,41 +502,54 @@ def draw_crypto_row(coin, histories, today_date, is_watchlist=False, hide_dollar
         if len(master_hist) > 20:
             master_hist['BB_Upper'], master_hist['BB_Lower'] = calculate_bbands(master_hist['Close'])
 
-        for i, (tf_label, days_back) in enumerate(timeframes.items()):
-            with cols[i+1]:
-                start_date = today_date - timedelta(days=days_back)
-                sliced_hist = master_hist[master_hist.index >= start_date]
-                if not sliced_hist.empty:
-                    start_p = sliced_hist['Close'].iloc[0]
-                    end_p = sliced_hist['Close'].iloc[-1]
-                    line_color = '#2ca02c' if end_p >= start_p else '#d62728'
-                    
-                    tf_ret = ((end_p - start_p) / start_p) * 100 if start_p > 0 else 0
-                    header_text = f"{tf_label} <span style='color:{line_color}; font-size:13px;'>({tf_ret:+.2f}%)</span>"
-                    
-                    fig = go.Figure()
-                    
-                    if 'Score' in sliced_hist.columns and not sliced_hist['Score'].dropna().empty:
-                        fig.add_trace(go.Scatter(x=sliced_hist.index, y=sliced_hist['Score'], mode='lines', name='Crypto Score', line=dict(color='fuchsia', width=2, dash='dot'), yaxis='y2'))
+        with cols[2]:
+            fig = go.Figure()
+            
+            # Draw the unified chart components
+            if 'Score' in master_hist.columns and not master_hist['Score'].dropna().empty:
+                fig.add_trace(go.Scatter(x=master_hist.index, y=master_hist['Score'], mode='lines', name='Crypto Score', line=dict(color='rgba(255, 0, 255, 0.4)', width=2, dash='dot'), yaxis='y2'))
 
-                    if 'BB_Upper' in sliced_hist.columns and not sliced_hist['BB_Upper'].dropna().empty:
-                        fig.add_trace(go.Scatter(x=sliced_hist.index, y=sliced_hist['BB_Upper'], mode='lines', line=dict(width=0), showlegend=False, hoverinfo='skip'))
-                        fig.add_trace(go.Scatter(x=sliced_hist.index, y=sliced_hist['BB_Lower'], mode='lines', line=dict(width=0), fill='tonexty', fillcolor='rgba(173, 216, 230, 0.2)', showlegend=False, hoverinfo='skip'))
+            if 'BB_Upper' in master_hist.columns and not master_hist['BB_Upper'].dropna().empty:
+                fig.add_trace(go.Scatter(x=master_hist.index, y=master_hist['BB_Upper'], mode='lines', line=dict(width=0), showlegend=False, hoverinfo='skip'))
+                fig.add_trace(go.Scatter(x=master_hist.index, y=master_hist['BB_Lower'], mode='lines', line=dict(width=0), fill='tonexty', fillcolor='rgba(173, 216, 230, 0.1)', showlegend=False, hoverinfo='skip'))
 
-                    fig.add_trace(go.Scatter(x=sliced_hist.index, y=sliced_hist['Close'], mode='lines', name='Price', line=dict(color=line_color, width=2.5)))
-                    
-                    if '200_WMA' in sliced_hist.columns and not sliced_hist['200_WMA'].dropna().empty:
-                        fig.add_trace(go.Scatter(x=sliced_hist.index, y=sliced_hist['200_WMA'], mode='lines', name='200 WMA', line=dict(color='darkorange', width=2, dash='dash')))
-                    if '50_SMA' in sliced_hist.columns and not sliced_hist['50_SMA'].dropna().empty:
-                        fig.add_trace(go.Scatter(x=sliced_hist.index, y=sliced_hist['50_SMA'], mode='lines', name='50 SMA', line=dict(color='gold', width=1.5, dash='dot')))
-                    if '200_SMA' in sliced_hist.columns and not sliced_hist['200_SMA'].dropna().empty:
-                        fig.add_trace(go.Scatter(x=sliced_hist.index, y=sliced_hist['200_SMA'], mode='lines', name='200 SMA', line=dict(color='mediumpurple', width=2, dash='dash')))
-                    
-                    if coin['Avg'] > 0:
-                        fig.add_hline(y=coin['Avg'], line_dash="dot", line_color="deepskyblue", line_width=2, opacity=0.8)
-                    
-                    fig.update_layout(title=dict(text=header_text, font=dict(size=14)), margin=dict(l=0, r=0, t=30, b=0), xaxis=dict(visible=False), yaxis=dict(visible=False), yaxis2=dict(range=[0, 100], overlaying='y', side='right', visible=False), showlegend=False, height=190, plot_bgcolor='rgba(0,0,0,0)', hovermode='x unified')
-                    st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
+            fig.add_trace(go.Scatter(x=master_hist.index, y=master_hist['Close'], mode='lines', name='Price', line=dict(color='#2ca02c', width=2.5)))
+            
+            if '200_WMA' in master_hist.columns and not master_hist['200_WMA'].dropna().empty:
+                fig.add_trace(go.Scatter(x=master_hist.index, y=master_hist['200_WMA'], mode='lines', name='200 WMA', line=dict(color='darkorange', width=2, dash='dash')))
+            if '50_SMA' in master_hist.columns and not master_hist['50_SMA'].dropna().empty:
+                fig.add_trace(go.Scatter(x=master_hist.index, y=master_hist['50_SMA'], mode='lines', name='50 SMA', line=dict(color='gold', width=1.5, dash='dot')))
+            if '200_SMA' in master_hist.columns and not master_hist['200_SMA'].dropna().empty:
+                fig.add_trace(go.Scatter(x=master_hist.index, y=master_hist['200_SMA'], mode='lines', name='200 SMA', line=dict(color='mediumpurple', width=2, dash='dash')))
+            
+            if coin['Avg'] > 0:
+                fig.add_hline(y=coin['Avg'], line_dash="dot", line_color="deepskyblue", line_width=2, opacity=0.8)
+            
+            # --- NEW: INTERACTIVE TIMEFRAME TOGGLES ---
+            fig.update_layout(
+                margin=dict(l=0, r=0, t=10, b=0),
+                xaxis=dict(
+                    rangeselector=dict(
+                        buttons=list([
+                            dict(count=1, label="1m", step="month", stepmode="backward"),
+                            dict(count=3, label="3m", step="month", stepmode="backward"),
+                            dict(count=6, label="6m", step="month", stepmode="backward"),
+                            dict(count=1, label="1y", step="year", stepmode="backward"),
+                            dict(step="all", label="Max")
+                        ]),
+                        bgcolor='rgba(150, 150, 150, 0.1)',
+                        activecolor='rgba(44, 160, 44, 0.5)'
+                    ),
+                    type="date"
+                ),
+                yaxis=dict(visible=True, side='left'), 
+                yaxis2=dict(range=[0, 100], overlaying='y', side='right', visible=False), 
+                showlegend=False, 
+                height=350, 
+                plot_bgcolor='rgba(0,0,0,0)', 
+                hovermode='x unified'
+            )
+            st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
     st.divider()
 
 # --- APP LAYOUT ---
@@ -506,14 +564,13 @@ st.markdown("*Note: The algorithm is dynamically altering scores based on this g
 global_scores_df = load_score_history()
 st.divider()
 
-# --- NEW: PERMANENT BLUECHIP TRACKERS ---
+# --- PERMANENT BLUECHIP TRACKERS ---
 st.markdown("### 👑 Major Market Movers")
 bc_dict = {'BTC': {'shares': 0, 'avg_price': 0}, 'ETH': {'shares': 0, 'avg_price': 0}, 'SOL': {'shares': 0, 'avg_price': 0}}
 with st.spinner("Fetching live bluechip data..."):
     bc_data, _, _ = get_crypto_data(bc_dict, fng_val)
     
 if bc_data:
-    # Display the score cards across 3 neat columns without the charts
     bc_cols = st.columns(3)
     for i, coin in enumerate(bc_data):
         if i < 3:
@@ -523,7 +580,7 @@ st.divider()
 
 # --- RESEARCH STATION ---
 st.markdown("### 🔍 Crypto Research Station")
-search_query = st.text_input("Enter Coin Symbol (e.g. ADA, LINK, DOGE):", "").strip().upper()
+search_query = st.text_input("Enter Coin Symbol (e.g. ADA, LINK, SUI):", "").strip().upper()
 
 if search_query:
     with st.spinner(f"Running historical breakdown on {search_query}..."):
@@ -554,7 +611,7 @@ st.markdown("Live technical scan of the top layer-1s, layer-2s, and blue-chip to
 global_universe = [
     'BTC', 'ETH', 'BNB', 'SOL', 'XRP', 'ADA', 'AVAX', 'DOGE', 'DOT',
     'TRX', 'LINK', 'MATIC', 'TON', 'SHIB', 'LTC', 'BCH', 'UNI', 'NEAR', 'ATOM',
-    'XLM', 'APT', 'OP', 'INJ', 'FIL', 'LDO', 'AR', 'RNDR', 'FTM', 'HBAR', 'PEPE'
+    'XLM', 'APT', 'OP', 'INJ', 'FIL', 'LDO', 'AR', 'RNDR', 'FTM', 'HBAR', 'PEPE', 'SUI', 'TAO'
 ]
 
 if st.checkbox("Run Crypto Market Scan (Takes ~10 seconds)"):
