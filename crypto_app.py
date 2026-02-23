@@ -212,24 +212,24 @@ def get_crypto_data(port_dict, global_fng_val):
                 dd_pts = 0
                 breakdown.append(f"❌ **Drawdown ({drawdown:.1f}%):** +0 pts (Near ATH / FOMO Zone)")
             elif dd_abs <= 40:
-                dd_pts = (dd_abs - 10) * (10.0 / 30.0) # Scales 0 to 10 linearly
+                dd_pts = (dd_abs - 10) * (10.0 / 30.0) 
                 score += dd_pts
                 breakdown.append(f"✅ **Drawdown ({drawdown:.1f}%):** +{dd_pts:.1f} pts (Mild Discount)")
             elif dd_abs <= 80:
-                dd_pts = 10.0 + ((dd_abs - 40.0) * (20.0 / 40.0)) # Scales 10 to 30 linearly
+                dd_pts = 10.0 + ((dd_abs - 40.0) * (20.0 / 40.0)) 
                 score += dd_pts
                 breakdown.append(f"✅ **Drawdown ({drawdown:.1f}%):** +{dd_pts:.1f} pts (Deep Value Zone)")
             else:
                 dd_pts = 30
                 score += dd_pts
                 breakdown.append(f"✅ **Drawdown ({drawdown:.1f}%):** +30 pts (Maximum Capitulation)")
-        elif tier == 3: # Memecoins cap out
+        elif tier == 3: 
             if dd_abs <= 20: dd_pts = 0
             elif dd_abs <= 60: dd_pts = 10
             else: dd_pts = 15 
             score += dd_pts
             breakdown.append(f"⚠️ **Meme Drawdown ({drawdown:.1f}%):** +{dd_pts} pts (Risk Capped)")
-        else: # Altcoin death zone
+        else: 
             if dd_abs > 80:
                 dd_pts = -20
                 score += dd_pts; risk_points += 2
@@ -247,10 +247,10 @@ def get_crypto_data(port_dict, global_fng_val):
                 sma_pts = -5
                 breakdown.append(f"⚠️ **SMA Ext ({sma_dist:+.1f}%):** {sma_pts} pts (Cooling Off Needed)")
             elif sma_dist >= 0:
-                sma_pts = 15.0 - (sma_dist * 0.75) # E.g., 0% = 15 pts, 20% = 0 pts
+                sma_pts = 15.0 - (sma_dist * 0.75) 
                 breakdown.append(f"✅ **SMA Ext ({sma_dist:+.1f}%):** +{sma_pts:.1f} pts (Fresh Breakout / Support)")
             elif sma_dist >= -20:
-                sma_pts = 10.0 + (sma_dist * 0.5) # E.g., 0% = 10 pts, -20% = 0 pts
+                sma_pts = 10.0 + (sma_dist * 0.5) 
                 breakdown.append(f"✅ **SMA Ext ({sma_dist:+.1f}%):** +{sma_pts:.1f} pts (Accumulating just under trend)")
             else:
                 sma_pts = -10
@@ -331,11 +331,10 @@ def get_crypto_data(port_dict, global_fng_val):
     log_scores_to_csv(portfolio_data)
     return portfolio_data, all_histories, total_value
 
-# --- UI HELPER FUNCTION ---
-def draw_crypto_row(coin, histories, today_date, is_watchlist=False, hide_dollars=False, score_history=None):
+# --- UI HELPER: SCORE CARD COMPONENT ---
+def render_score_card(coin, today_date, score_history=None, is_watchlist=False, hide_dollars=False):
+    """Reusable function to draw just the analysis score card without charts."""
     ticker = coin['Ticker']
-    cols = st.columns([1.6, 1, 1, 1, 1, 1]) 
-    is_search_or_watch = coin['Shares'] == 0 
     
     signal_tooltips = {
         "ACCUMULATE HEAVILY 🟩": "Whales are buying, macro trend is safe, and the asset is deeply discounted. Deploy capital.",
@@ -345,96 +344,104 @@ def draw_crypto_row(coin, histories, today_date, is_watchlist=False, hide_dollar
         "SELL / AVOID 🟥": "Death Cross, high volatility, and smart money is fleeing. Avoid completely."
     }
     
-    with cols[0]:
-        title_col, btn_col = st.columns([3, 1])
-        with title_col: 
-            st.markdown(f"### **{ticker}** <span style='font-size: 14px; color: gray;'>(Tier {coin['Tier']})</span>", unsafe_allow_html=True)
-            
-            # --- WHALE INSPECTOR HUB ---
-            arkham_url = f"https://platform.arkhamintelligence.com/explorer/token/{ticker.lower()}"
-            dune_url = f"https://dune.com/search?q={ticker}&time_range=all"
-            
-            st.markdown(
-                f"""
-                <div style="display: flex; gap: 10px; font-size: 13px; margin-bottom: 10px;">
-                    <a href='https://finance.yahoo.com/quote/{ticker}-USD' target='_blank' style='text-decoration: none;'>📈 Price Chart</a>
-                    <a href='{arkham_url}' target='_blank' style='text-decoration: none;'>🐋 Arkham (Whales)</a>
-                    <a href='{dune_url}' target='_blank' style='text-decoration: none;'>📊 Dune Dashboards</a>
-                </div>
-                """, 
-                unsafe_allow_html=True
-            )
-            
-        with btn_col:
-            if is_watchlist:
-                if st.button("❌", key=f"remove_{ticker}"):
-                    st.session_state.watchlist.remove(ticker)
-                    st.rerun()
-
-        trend_html = ""
-        if score_history is not None and not score_history.empty:
-            t_scores = score_history[score_history['Ticker'] == ticker].copy()
-            if not t_scores.empty:
-                ninety_days_ago = today_date - timedelta(days=90)
-                t_scores_quarter = t_scores[t_scores['Date'] >= ninety_days_ago].sort_values('Date')
-                if not t_scores_quarter.empty:
-                    oldest_score = int(t_scores_quarter.iloc[0]['Score'])
-                    current_score = int(coin['Score'])
-                    diff = current_score - oldest_score
-                    if diff > 0: trend_html = f" <span style='color:#2ca02c; font-size:13px;'><b>⬆️ (+{diff})</b></span>"
-                    elif diff < 0: trend_html = f" <span style='color:#d62728; font-size:13px;'><b>⬇️ ({diff})</b></span>"
-                    elif len(t_scores_quarter) > 1: trend_html = f" <span style='color:gray; font-size:13px;'><b>➖</b></span>"
-
-        hover_text = signal_tooltips.get(coin['Decision'], "Quant Engine Signal")
-
+    title_col, btn_col = st.columns([3, 1])
+    with title_col: 
+        st.markdown(f"### **{ticker}** <span style='font-size: 14px; color: gray;'>(Tier {coin['Tier']})</span>", unsafe_allow_html=True)
+        
+        # --- WHALE INSPECTOR HUB ---
+        arkham_url = f"https://platform.arkhamintelligence.com/explorer/token/{ticker.lower()}"
+        dune_url = f"https://dune.com/search?q={ticker}&time_range=all"
+        
         st.markdown(
-            f"<div title='{hover_text}' style='border:1px solid {coin['D_Color']}; padding: 10px; border-radius: 5px; margin-bottom: 5px; cursor: help;'>"
-            f"<h4 style='margin:0; color:{coin['D_Color']};'>Signal: {coin['Decision']}</h4>"
-            f"<p style='margin:0; font-size:14px;'>Crypto Score: <b>{coin['Score']}/100</b>{trend_html} | Risk: <span style='color:{coin['R_Color']};'><b>{coin['Risk']}</b></span></p>"
-            f"</div>", unsafe_allow_html=True
+            f"""
+            <div style="display: flex; gap: 10px; font-size: 13px; margin-bottom: 10px;">
+                <a href='https://finance.yahoo.com/quote/{ticker}-USD' target='_blank' style='text-decoration: none;'>📈 Chart</a>
+                <a href='{arkham_url}' target='_blank' style='text-decoration: none;'>🐋 Arkham</a>
+                <a href='{dune_url}' target='_blank' style='text-decoration: none;'>📊 Dune</a>
+            </div>
+            """, 
+            unsafe_allow_html=True
         )
         
-        with st.popover("📊 Score Breakdown", use_container_width=True):
-            st.markdown(f"### {ticker} Algorithmic Breakdown")
-            for line in coin.get('Breakdown', []):
-                st.write(line)
-        
-        sub1, sub2 = st.columns(2)
-        with sub1:
-            price_format = "${:.6f}" if coin.get('Price', 0.0) < 1 else "${:,.2f}"
-            st.write(f"**Price:** {price_format.format(coin.get('Price', 0.0))}")
-            dd = coin.get('Drawdown', 0)
-            ath = coin.get('ATH', 0)
-            st.write(f"**ATH:** {price_format.format(ath)}")
-            dd_color = "green" if dd < -60 else ("orange" if dd < -30 else "red")
-            st.markdown(f"**Drawdown:** :{dd_color}[{dd:.1f}%]")
-            
-        with sub2:
-            st.write(f"**RSI:** {coin['RSI']}")
-            
-            obv_color = "green" if coin['OBV'] == "Accumulating" else "red"
-            st.markdown(f"**Whale Vol:** :{obv_color}[{coin['OBV']}]")
-            
-            sma50, sma200 = coin.get('SMA_50', 0), coin.get('SMA_200', 0)
-            cross = "Golden" if sma50 > sma200 else "Death"
-            cross_color = "green" if cross == "Golden" else "red"
-            st.markdown(f"**Trend:** :{cross_color}[{cross} Cross]")
+    with btn_col:
+        if is_watchlist:
+            if st.button("❌", key=f"remove_{ticker}"):
+                st.session_state.watchlist.remove(ticker)
+                st.rerun()
 
-        if not is_search_or_watch:
-            ret = ((coin['Price'] - coin['Avg']) / coin['Avg']) * 100 if coin['Avg'] > 0 else 0
-            avg_str = "$••••" if hide_dollars else (f"${coin['Avg']:.6f}" if coin['Avg'] < 1 else f"${coin['Avg']:.2f}")
-            val_str = "$••••" if hide_dollars else f"${coin['Val']:,.0f}"
-            ret_color = "#2ca02c" if ret >= 0 else "#d62728"
+    trend_html = ""
+    if score_history is not None and not score_history.empty:
+        t_scores = score_history[score_history['Ticker'] == ticker].copy()
+        if not t_scores.empty:
+            ninety_days_ago = today_date - timedelta(days=90)
+            t_scores_quarter = t_scores[t_scores['Date'] >= ninety_days_ago].sort_values('Date')
+            if not t_scores_quarter.empty:
+                oldest_score = int(t_scores_quarter.iloc[0]['Score'])
+                current_score = int(coin['Score'])
+                diff = current_score - oldest_score
+                if diff > 0: trend_html = f" <span style='color:#2ca02c; font-size:13px;'><b>⬆️ (+{diff})</b></span>"
+                elif diff < 0: trend_html = f" <span style='color:#d62728; font-size:13px;'><b>⬇️ ({diff})</b></span>"
+                elif len(t_scores_quarter) > 1: trend_html = f" <span style='color:gray; font-size:13px;'><b>➖</b></span>"
+
+    hover_text = signal_tooltips.get(coin['Decision'], "Quant Engine Signal")
+
+    st.markdown(
+        f"<div title='{hover_text}' style='border:1px solid {coin['D_Color']}; padding: 10px; border-radius: 5px; margin-bottom: 5px; cursor: help;'>"
+        f"<h4 style='margin:0; color:{coin['D_Color']};'>Signal: {coin['Decision']}</h4>"
+        f"<p style='margin:0; font-size:14px;'>Crypto Score: <b>{coin['Score']}/100</b>{trend_html} | Risk: <span style='color:{coin['R_Color']};'><b>{coin['Risk']}</b></span></p>"
+        f"</div>", unsafe_allow_html=True
+    )
+    
+    with st.popover("📊 Score Breakdown", use_container_width=True):
+        st.markdown(f"### {ticker} Algorithmic Breakdown")
+        for line in coin.get('Breakdown', []):
+            st.write(line)
+    
+    sub1, sub2 = st.columns(2)
+    with sub1:
+        price_format = "${:.6f}" if coin.get('Price', 0.0) < 1 else "${:,.2f}"
+        st.write(f"**Price:** {price_format.format(coin.get('Price', 0.0))}")
+        dd = coin.get('Drawdown', 0)
+        ath = coin.get('ATH', 0)
+        st.write(f"**ATH:** {price_format.format(ath)}")
+        dd_color = "green" if dd < -60 else ("orange" if dd < -30 else "red")
+        st.markdown(f"**Drawdown:** :{dd_color}[{dd:.1f}%]")
+        
+    with sub2:
+        st.write(f"**RSI:** {coin['RSI']}")
+        
+        obv_color = "green" if coin['OBV'] == "Accumulating" else "red"
+        st.markdown(f"**Whale Vol:** :{obv_color}[{coin['OBV']}]")
+        
+        sma50, sma200 = coin.get('SMA_50', 0), coin.get('SMA_200', 0)
+        cross = "Golden" if sma50 > sma200 else "Death"
+        cross_color = "green" if cross == "Golden" else "red"
+        st.markdown(f"**Trend:** :{cross_color}[{cross} Cross]")
+
+    is_search_or_watch = coin['Shares'] == 0 
+    if not is_search_or_watch:
+        ret = ((coin['Price'] - coin['Avg']) / coin['Avg']) * 100 if coin['Avg'] > 0 else 0
+        avg_str = "$••••" if hide_dollars else (f"${coin['Avg']:.6f}" if coin['Avg'] < 1 else f"${coin['Avg']:.2f}")
+        val_str = "$••••" if hide_dollars else f"${coin['Val']:,.0f}"
+        ret_color = "#2ca02c" if ret >= 0 else "#d62728"
+        
+        html_string = (
+            f"<div style='font-size: 15px; margin-top: 5px; margin-bottom: 5px;'>"
+            f"<b>My Return:</b> <span style='color:{ret_color}; font-weight:bold;'>{ret:+.2f}%</span> &nbsp;|&nbsp; "
+            f"<b>Avg Cost:</b> {avg_str} &nbsp;|&nbsp; "
+            f"<b>Value:</b> {val_str}"
+            f"</div>"
+        )
+        st.markdown(html_string, unsafe_allow_html=True)
+
+# --- UI HELPER: FULL ROW WITH CHARTS ---
+def draw_crypto_row(coin, histories, today_date, is_watchlist=False, hide_dollars=False, score_history=None):
+    cols = st.columns([1.6, 1, 1, 1, 1, 1]) 
+    
+    with cols[0]:
+        render_score_card(coin, today_date, score_history, is_watchlist, hide_dollars)
             
-            html_string = (
-                f"<div style='font-size: 15px; margin-top: 5px; margin-bottom: 5px;'>"
-                f"<b>My Return:</b> <span style='color:{ret_color}; font-weight:bold;'>{ret:+.2f}%</span> &nbsp;|&nbsp; "
-                f"<b>Avg Cost:</b> {avg_str} &nbsp;|&nbsp; "
-                f"<b>Value:</b> {val_str}"
-                f"</div>"
-            )
-            st.markdown(html_string, unsafe_allow_html=True)
-            
+    ticker = coin['Ticker']
     yf_ticker = f"{ticker}-USD" if not ticker.endswith("-USD") else ticker
     master_hist = histories.get(yf_ticker, histories.get(ticker))
     
@@ -497,9 +504,26 @@ st.markdown(f"**🌍 Global Market Sentiment:** :{fng_color}[**{fng_val}/100 ({f
 st.markdown("*Note: The algorithm is dynamically altering scores based on this global sentiment to enforce a contrarian strategy.*")
 
 global_scores_df = load_score_history()
+st.divider()
 
+# --- NEW: PERMANENT BLUECHIP TRACKERS ---
+st.markdown("### 👑 Major Market Movers")
+bc_dict = {'BTC': {'shares': 0, 'avg_price': 0}, 'ETH': {'shares': 0, 'avg_price': 0}, 'SOL': {'shares': 0, 'avg_price': 0}}
+with st.spinner("Fetching live bluechip data..."):
+    bc_data, _, _ = get_crypto_data(bc_dict, fng_val)
+    
+if bc_data:
+    # Display the score cards across 3 neat columns without the charts
+    bc_cols = st.columns(3)
+    for i, coin in enumerate(bc_data):
+        if i < 3:
+            with bc_cols[i]:
+                render_score_card(coin, today, score_history=global_scores_df, hide_dollars=hide_dollars)
+st.divider()
+
+# --- RESEARCH STATION ---
 st.markdown("### 🔍 Crypto Research Station")
-search_query = st.text_input("Enter Coin Symbol (e.g. BTC, ETH, SOL, LINK):", "").strip().upper()
+search_query = st.text_input("Enter Coin Symbol (e.g. ADA, LINK, DOGE):", "").strip().upper()
 
 if search_query:
     with st.spinner(f"Running historical breakdown on {search_query}..."):
