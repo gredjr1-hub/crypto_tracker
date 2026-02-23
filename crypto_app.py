@@ -20,13 +20,11 @@ if 'crypto_portfolio' not in st.session_state:
 
 st.set_page_config(page_title="Crypto Quant Command Center", layout="wide", page_icon="₿")
 
-# --- NEW: PROJECT PROMISE & UTILITY TIERS ---
-# This prevents dead projects or shitcoins from getting positive scores for crashing
+# --- PROJECT PROMISE & UTILITY TIERS ---
 CRYPTO_TIERS = {
-    'BTC': 1, 'ETH': 1, # Tier 1: Bluechips
-    'SOL': 2, 'ADA': 2, 'AVAX': 2, 'DOT': 2, 'LINK': 2, 'MATIC': 2, 'NEAR': 2, 'APT': 2, 'OP': 2, 'INJ': 2, 'XRP': 2, 'BNB': 2, 'TRX': 2, 'LTC': 2, # Tier 2: Solid Utility / L1s & L2s
-    'DOGE': 3, 'SHIB': 3, 'PEPE': 3, 'FLOKI': 3, 'BONK': 3, 'WIF': 3 # Tier 3: Established Memes
-    # Everything else defaults to Tier 4 (Speculative/High Risk)
+    'BTC': 1, 'ETH': 1, 
+    'SOL': 2, 'ADA': 2, 'AVAX': 2, 'DOT': 2, 'LINK': 2, 'MATIC': 2, 'NEAR': 2, 'APT': 2, 'OP': 2, 'INJ': 2, 'XRP': 2, 'BNB': 2, 'TRX': 2, 'LTC': 2, 
+    'DOGE': 3, 'SHIB': 3, 'PEPE': 3, 'FLOKI': 3, 'BONK': 3, 'WIF': 3 
 }
 
 # --- DATA LOADERS ---
@@ -42,7 +40,6 @@ def load_score_history():
 
 @st.cache_data(ttl=3600)
 def get_fear_and_greed():
-    """Fetches real-time crypto market sentiment."""
     try:
         r = requests.get('https://api.alternative.me/fng/?limit=1')
         data = r.json()
@@ -51,6 +48,9 @@ def get_fear_and_greed():
         return val, classification
     except:
         return 50, "Neutral"
+
+# Fetch Global Sentiment once at the top so the algorithm can use it!
+fng_val, fng_class = get_fear_and_greed()
 
 # --- ALGORITHMIC HELPER FUNCTIONS ---
 def calculate_rsi(series, period=14):
@@ -75,6 +75,12 @@ def calculate_bbands(series, window=20, num_std=2):
     upper = rolling_mean + (rolling_std * num_std)
     lower = rolling_mean - (rolling_std * num_std)
     return upper, lower
+
+# --- NEW: ON-BALANCE VOLUME (OBV) CALCULATOR ---
+def calculate_obv(close, volume):
+    """Calculates On-Balance Volume to track Smart Money/Whale accumulation."""
+    obv = (np.sign(close.diff()) * volume).fillna(0).cumsum()
+    return obv
 
 def log_scores_to_csv(portfolio_data):
     filename = "historical_crypto_scores.csv"
@@ -136,7 +142,7 @@ if st.session_state.crypto_portfolio:
 timeframes = {'1M': 30, '3M': 90, '6M': 180, '1Y': 365, '5Y': 1825}
 
 @st.cache_data(ttl=900) 
-def get_crypto_data(port_dict):
+def get_crypto_data(port_dict, global_fng_val):
     if not port_dict: return [], {}, 0 
     
     portfolio_data = []
@@ -160,7 +166,7 @@ def get_crypto_data(port_dict):
         volatility, drawdown, ath = 0.0, 0.0, 0.0
         rsi_14, macd_val, sig_val, bb_upper, bb_lower = 'N/A', 'N/A', 'N/A', 'N/A', 'N/A'
         sma_50, sma_200 = 'N/A', 'N/A'
-        vol_surge = False
+        obv_trend = "Neutral"
         
         if not hist.empty:
             ath = hist['Close'].max()
@@ -170,8 +176,15 @@ def get_crypto_data(port_dict):
             hist['50_SMA'] = hist['Close'].rolling(window=50).mean()
             hist['200_SMA'] = hist['Close'].rolling(window=200).mean()
             
+            # OBV Calculation
+            hist['OBV'] = calculate_obv(hist['Close'], hist['Volume'])
+            hist['OBV_SMA_20'] = hist['OBV'].rolling(window=20).mean()
+            
             sma_50 = hist['50_SMA'].iloc[-1] if not pd.isna(hist['50_SMA'].iloc[-1]) else 0
             sma_200 = hist['200_SMA'].iloc[-1] if not pd.isna(hist['200_SMA'].iloc[-1]) else 0
+            
+            if not pd.isna(hist['OBV'].iloc[-1]) and not pd.isna(hist['OBV_SMA_20'].iloc[-1]):
+                obv_trend = "Accumulating" if hist['OBV'].iloc[-1] > hist['OBV_SMA_20'].iloc[-1] else "Distributing"
             
             if len(hist) >= 365:
                 volatility = hist['Close'].tail(365).pct_change().std() * np.sqrt(365) * 100
@@ -184,79 +197,70 @@ def get_crypto_data(port_dict):
                 rsi_14 = round(rsi_series.iloc[-1], 2)
                 macd_val, sig_val = macd_line.iloc[-1], signal_line.iloc[-1]
                 bb_upper, bb_lower = upper_b.iloc[-1], lower_b.iloc[-1]
-                
-                avg_vol = hist['Volume'].tail(30).mean()
-                if hist['Volume'].iloc[-1] > (avg_vol * 2.0): vol_surge = True
 
-        # --- THE TIERED CRYPTO ALGORITHM ---
+        # --- THE CROSS-REFERENCED CRYPTO ALGORITHM ---
         score = 50 
         risk_points = 0
         
-        # Identify the Coin's Tier Status
         tier = CRYPTO_TIERS.get(display_ticker, 4)
         tier_str = "Bluechip" if tier == 1 else "Utility/L1" if tier == 2 else "Meme" if tier == 3 else "Speculative/Alt"
         breakdown = [f"**Base Score:** 50 pts", f"🧬 **Project Classification:** Tier {tier} ({tier_str})"]
         
-        if tier == 4: risk_points += 1 # Inherent risk for unproven altcoins
-        if tier == 3: risk_points += 1 # Inherent risk for memecoins
+        if tier == 4: risk_points += 1 
+        if tier == 3: risk_points += 1 
 
-        # 1. Structural Trends
+        # 1. Global Sentiment Cross-Reference
+        if global_fng_val < 30:
+            score += 10
+            breakdown.append(f"✅ **Market Capitulation (<30 F&G):** +10 pts (Contrarian Macro Buy)")
+        elif global_fng_val > 75:
+            score -= 10
+            breakdown.append(f"❌ **Market Euphoria (>75 F&G):** -10 pts (Take Profit / High Risk Zone)")
+
+        # 2. On-Chain/Whale Accumulation (OBV Cross-Reference)
+        if obv_trend == "Accumulating":
+            score += 10
+            breakdown.append(f"🐋 **OBV Accumulation:** +10 pts (Smart Money is buying the dips)")
+        elif obv_trend == "Distributing":
+            score -= 10
+            breakdown.append(f"🚨 **OBV Distribution:** -10 pts (Whales are taking profits / selling)")
+
+        # 3. Structural Trends
         if sma_200 != 0 and sma_50 != 0:
             if current_price > sma_200: 
-                score += 15
-                breakdown.append("✅ **Price > 200 SMA:** +15 pts (Macro Bull Trend)")
+                score += 10; breakdown.append("✅ **Price > 200 SMA:** +10 pts")
             else: 
-                score -= 15; risk_points += 1
-                breakdown.append("❌ **Price < 200 SMA:** -15 pts (Macro Bear Trend) [+1 Risk]")
+                score -= 10; risk_points += 1; breakdown.append("❌ **Price < 200 SMA:** -10 pts [+1 Risk]")
                 
             if sma_50 > sma_200:
-                score += 10; breakdown.append("✅ **Golden Cross (50>200):** +10 pts")
+                score += 5; breakdown.append("✅ **Golden Cross:** +5 pts")
             else:
-                score -= 10; breakdown.append("❌ **Death Cross (50<200):** -10 pts")
+                score -= 5; breakdown.append("❌ **Death Cross:** -5 pts")
 
-        # 2. Historical Drawdown (NOW TIER-ADJUSTED)
+        # 4. Historical Drawdown (Tier-Adjusted)
         if drawdown < -75:
-            if tier <= 2:
-                score += 20; breakdown.append(f"✅ **Deep Value Bluechip/Utility:** +20 pts (Generational accumulation)")
-            elif tier == 3:
-                breakdown.append(f"➖ **Crashed Meme Coin:** +0 pts (Highly dangerous to catch falling meme knives)")
-            else:
-                score -= 15; risk_points += 2
-                breakdown.append(f"❌ **Dead Altcoin Risk:** -15 pts (Tier 4 coin down 75%+ is a high rug/death probability) [+2 Risk]")
-                
+            if tier <= 2: score += 15; breakdown.append(f"✅ **Deep Value Bluechip/Utility:** +15 pts")
+            elif tier == 3: breakdown.append(f"➖ **Crashed Meme Coin:** +0 pts")
+            else: score -= 15; risk_points += 2; breakdown.append(f"❌ **Dead Altcoin Risk:** -15 pts [+2 Risk]")
         elif drawdown < -40:
             if tier <= 2: score += 10; breakdown.append(f"✅ **Healthy Drawdown:** +10 pts")
-            else: breakdown.append(f"➖ **Altcoin Drawdown:** +0 pts (Neutral)")
-            
         elif drawdown > -10:
-            score -= 10
-            breakdown.append(f"❌ **Near ATH ({drawdown:.1f}%):** -10 pts (FOMO Risk / Overextended)")
+            score -= 10; breakdown.append(f"❌ **Near ATH:** -10 pts (FOMO Risk)")
             
-        # 3. Short-Term Momentum
+        # 5. Short-Term Momentum
         if isinstance(rsi_14, (float, int)):
-            if rsi_14 < 35: 
-                score += 10; breakdown.append("✅ **RSI < 35:** +10 pts (Oversold/Capitulation)")
-            elif rsi_14 > 70: 
-                score -= 10; risk_points += 1; breakdown.append("❌ **RSI > 70:** -10 pts (Overbought/Euphoria) [+1 Risk]")
-                
-        if isinstance(macd_val, (float, int)) and isinstance(sig_val, (float, int)):
-            if macd_val > sig_val: score += 5; breakdown.append("✅ **MACD Bullish Cross:** +5 pts")
-            else: score -= 5; breakdown.append("❌ **MACD Bearish Cross:** -5 pts")
+            if rsi_14 < 35: score += 5; breakdown.append("✅ **RSI Oversold:** +5 pts")
+            elif rsi_14 > 70: score -= 5; risk_points += 1; breakdown.append("❌ **RSI Overbought:** -5 pts [+1 Risk]")
                 
         if isinstance(bb_upper, (float, int)) and current_price > 0:
-            if current_price < bb_lower: score += 10; breakdown.append("✅ **Price below Lower BB:** +10 pts (Mean reversion bounce)")
-            elif current_price > bb_upper: score -= 10; breakdown.append("❌ **Price above Upper BB:** -10 pts (Overextended)")
-                
-        if vol_surge and (hist['Close'].iloc[-1] > hist['Open'].iloc[-1]): 
-            score += 5; breakdown.append("✅ **Bullish Volume Surge:** +5 pts (Whale Accumulation)")
+            if current_price < bb_lower: score += 5; breakdown.append("✅ **Below Lower BB:** +5 pts")
+            elif current_price > bb_upper: score -= 5; breakdown.append("❌ **Above Upper BB:** -5 pts")
             
-        if volatility > 100: 
-            risk_points += 2; breakdown.append("⚠️ **Extreme Volatility (>100%):** [+2 Risk]")
-        elif volatility < 40: 
-            risk_points -= 1; breakdown.append("🛡️ **Low Volatility (<40%):** [-1 Risk]")
+        if volatility > 100: risk_points += 2; breakdown.append("⚠️ **Extreme Volatility (>100%):** [+2 Risk]")
+        elif volatility < 40: risk_points -= 1; breakdown.append("🛡️ **Low Volatility (<40%):** [-1 Risk]")
 
         score = max(0, min(100, int(score))) 
-        breakdown.append(f"---\n🎯 **Final Crypto Quant Score: {score}/100**")
+        breakdown.append(f"---\n🎯 **Holistic Quant Score: {score}/100**")
         
         if score >= 80: decision, d_color = "ACCUMULATE HEAVILY 🟩", "#28a745"
         elif score >= 60: decision, d_color = "DCA / HOLD 🟨", "#17a2b8"
@@ -274,7 +278,7 @@ def get_crypto_data(port_dict):
         portfolio_data.append({
             'Ticker': display_ticker, 'Val': val, 'Price': current_price, 'Shares': shares, 'Avg': avg_price,
             'Drawdown': drawdown, 'ATH': ath, 'SMA_50': sma_50, 'SMA_200': sma_200,
-            'RSI': rsi_14, 'MACD': macd_val, 'MACD_Sig': sig_val, 'Vol': volatility, 'Tier': tier,
+            'RSI': rsi_14, 'MACD': macd_val, 'MACD_Sig': sig_val, 'Vol': volatility, 'Tier': tier, 'OBV': obv_trend,
             'Score': score, 'Decision': decision, 'D_Color': d_color, 'Risk': risk_lvl, 'R_Color': r_color, 'Risk_Pts': risk_points,
             'Upper_BB': bb_upper, 'Lower_BB': bb_lower,
             'Breakdown': breakdown
@@ -290,18 +294,32 @@ def draw_crypto_row(coin, histories, today_date, is_watchlist=False, hide_dollar
     is_search_or_watch = coin['Shares'] == 0 
     
     signal_tooltips = {
-        "ACCUMULATE HEAVILY 🟩": "Deep value + technical breakout on a reliable project. Deploy heavy capital.",
-        "DCA / HOLD 🟨": "Healthy macro trend but not deeply oversold. Buy in incremental tranches (DCA).",
-        "HOLD ⬜": "Neutral zone. Wait for a clearer signal before deploying new fiat.",
-        "TRIM PROFITS 🟧": "Historically overextended. Scaling out of 15-30% here is historically wise.",
-        "SELL / AVOID 🟥": "Macro breakdown or dead altcoin metric triggered. Avoid completely."
+        "ACCUMULATE HEAVILY 🟩": "Whales are buying, macro trend is safe, and the asset is deeply discounted. Deploy capital.",
+        "DCA / HOLD 🟨": "Healthy metrics but not a generational buy. Scale in slowly.",
+        "HOLD ⬜": "Metrics are contradicting each other. Wait for a clearer setup.",
+        "TRIM PROFITS 🟧": "Market is greedy, RSI is overbought, or whales are starting to distribute. Take chips off the table.",
+        "SELL / AVOID 🟥": "Death Cross, high volatility, and smart money is fleeing. Avoid completely."
     }
     
     with cols[0]:
         title_col, btn_col = st.columns([3, 1])
         with title_col: 
             st.markdown(f"### **{ticker}** <span style='font-size: 14px; color: gray;'>(Tier {coin['Tier']})</span>", unsafe_allow_html=True)
-            st.markdown(f"<a href='https://finance.yahoo.com/quote/{ticker}-USD' target='_blank' style='text-decoration: none; font-size: 14px;'>🔗 Yahoo Chart</a>", unsafe_allow_html=True)
+            
+            # --- WHALE INSPECTOR HUB ---
+            arkham_url = f"https://platform.arkhamintelligence.com/explorer/token/{ticker.lower()}"
+            dune_url = f"https://dune.com/search?q={ticker}&time_range=all"
+            
+            st.markdown(
+                f"""
+                <div style="display: flex; gap: 10px; font-size: 13px; margin-bottom: 10px;">
+                    <a href='https://finance.yahoo.com/quote/{ticker}-USD' target='_blank' style='text-decoration: none;'>📈 Price Chart</a>
+                    <a href='{arkham_url}' target='_blank' style='text-decoration: none;'>🐋 Arkham (Whales)</a>
+                    <a href='{dune_url}' target='_blank' style='text-decoration: none;'>📊 Dune Analytics</a>
+                </div>
+                """, 
+                unsafe_allow_html=True
+            )
             
         with btn_col:
             if is_watchlist:
@@ -349,8 +367,11 @@ def draw_crypto_row(coin, histories, today_date, is_watchlist=False, hide_dollar
             
         with sub2:
             st.write(f"**RSI:** {coin['RSI']}")
-            macd_status = "Bullish" if (isinstance(coin['MACD'], (float, int)) and coin['MACD'] > coin['MACD_Sig']) else "Bearish"
-            st.write(f"**MACD:** {macd_status}")
+            
+            # Updated to show the new OBV logic on the card!
+            obv_color = "green" if coin['OBV'] == "Accumulating" else "red"
+            st.markdown(f"**Whale Vol:** :{obv_color}[{coin['OBV']}]")
+            
             sma50, sma200 = coin.get('SMA_50', 0), coin.get('SMA_200', 0)
             cross = "Golden" if sma50 > sma200 else "Death"
             cross_color = "green" if cross == "Golden" else "red"
@@ -428,9 +449,9 @@ st.title("₿ Nightshift Crypto Command Center")
 today = pd.Timestamp.today().tz_localize(None)
 
 # --- FEAR & GREED INDEX WIDGET ---
-fng_val, fng_class = get_fear_and_greed()
 fng_color = "red" if fng_val < 30 else ("orange" if fng_val < 50 else ("green" if fng_val < 75 else "darkgreen"))
 st.markdown(f"**🌍 Global Market Sentiment:** :{fng_color}[**{fng_val}/100 ({fng_class})**]")
+st.markdown("*Note: The algorithm is dynamically altering scores based on this global sentiment to enforce a contrarian strategy.*")
 
 global_scores_df = load_score_history()
 
@@ -439,7 +460,8 @@ search_query = st.text_input("Enter Coin Symbol (e.g. BTC, ETH, SOL, LINK):", ""
 
 if search_query:
     with st.spinner(f"Running historical breakdown on {search_query}..."):
-        search_data, search_hist, _ = get_crypto_data({search_query: {'shares': 0, 'avg_price': 0}})
+        # WE NOW PASS THE FEAR AND GREED VALUE INTO THE SCORING ENGINE!
+        search_data, search_hist, _ = get_crypto_data({search_query: {'shares': 0, 'avg_price': 0}}, fng_val)
         if search_data and search_data[0]['Price'] > 0:
             col1, col2 = st.columns([8, 1])
             with col2:
@@ -457,13 +479,12 @@ if st.session_state.watchlist:
     st.markdown("### ⭐ My Watchlist")
     watch_dict = {ticker: {} for ticker in st.session_state.watchlist}
     with st.spinner("Updating Watchlist algorithms..."):
-        watch_data, watch_hist, _ = get_crypto_data(watch_dict)
+        watch_data, watch_hist, _ = get_crypto_data(watch_dict, fng_val)
     for coin in watch_data: draw_crypto_row(coin, watch_hist, today, is_watchlist=True, hide_dollars=hide_dollars, score_history=global_scores_df)
 
 st.markdown("### 🏆 Top Market Scanner")
 st.markdown("Live technical scan of the top layer-1s, layer-2s, and blue-chip tokens (Stablecoins excluded).")
 
-# Removed stablecoins
 global_universe = [
     'BTC', 'ETH', 'BNB', 'SOL', 'XRP', 'ADA', 'AVAX', 'DOGE', 'DOT',
     'TRX', 'LINK', 'MATIC', 'TON', 'SHIB', 'LTC', 'BCH', 'UNI', 'NEAR', 'ATOM',
@@ -473,7 +494,7 @@ global_universe = [
 if st.checkbox("Run Crypto Market Scan (Takes ~10 seconds)"):
     scan_dict = {ticker: {} for ticker in global_universe}
     with st.spinner("Scanning global assets..."):
-        market_data, market_hist, _ = get_crypto_data(scan_dict)
+        market_data, market_hist, _ = get_crypto_data(scan_dict, fng_val)
         
     if market_data:
         df_market = pd.DataFrame(market_data)
@@ -493,7 +514,7 @@ st.divider()
 
 if st.session_state.crypto_portfolio:
     with st.spinner("Crunching your Crypto Portfolio..."):
-        data, histories, total_val = get_crypto_data(st.session_state.crypto_portfolio)
+        data, histories, total_val = get_crypto_data(st.session_state.crypto_portfolio, fng_val)
 
     if data:
         total_val_str = "$••••" if hide_dollars else f"${total_val:,.2f}"
