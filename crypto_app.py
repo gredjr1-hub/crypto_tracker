@@ -9,6 +9,10 @@ import os
 import csv
 import requests
 from datetime import datetime
+try:
+    from pytrends.request import TrendReq
+except ImportError:
+    pass
 
 # --- SESSION STATE INITIALIZATION ---
 if 'startup_sound_played' not in st.session_state:
@@ -27,22 +31,23 @@ CRYPTO_TIERS = {
     'DOGE': 3, 'SHIB': 3, 'PEPE': 3, 'FLOKI': 3, 'BONK': 3, 'WIF': 3 
 }
 
-# --- QUALITATIVE FUNDAMENTAL DATA ---
-# Utility Score (0-100): Real-world use case, tech capability, adoption
-# Decentralization Score (0-100): Token distribution, node counts, VC/Whale concentration
+# --- QUALITATIVE FUNDAMENTAL DATA & MACRO TARGETS ---
+# 'staked': % of total supply currently locked (creates supply shock)
+# 'target': Macro institutional consensus price target for current cycle
+# 'trend_term': The exact Google Search term to check for retail FOMO
 CRYPTO_META = {
-    'BTC': {'desc': "The first decentralized digital currency. Acting as a global, permissionless store of value and digital gold.", 'utility': 95, 'decentralization': 100},
-    'ETH': {'desc': "The leading smart contract platform. The backbone of DeFi, NFTs, and global decentralized applications.", 'utility': 98, 'decentralization': 85},
-    'SOL': {'desc': "High-speed, low-cost monolithic Layer 1 blockchain optimized for mass adoption and high-frequency trading.", 'utility': 90, 'decentralization': 55}, # Penalized for heavy VC/insider allocation
-    'SUI': {'desc': "Next-gen Layer 1 built with the Move programming language by former Meta engineers. Highly scalable.", 'utility': 85, 'decentralization': 50}, # Heavy insider unlocks
-    'TAO': {'desc': "Bittensor. A decentralized, open-source network that commoditizes AI machine learning intelligence.", 'utility': 92, 'decentralization': 75},
-    'LINK': {'desc': "The industry standard decentralized oracle network, feeding real-world data into smart contracts securely.", 'utility': 95, 'decentralization': 70},
-    'AVAX': {'desc': "Highly scalable, highly customizable smart contract platform featuring subnets for institutional adoption.", 'utility': 85, 'decentralization': 65},
-    'ADA': {'desc': "Peer-reviewed, academic-driven Proof of Stake blockchain focused on security and global financial inclusion.", 'utility': 75, 'decentralization': 80},
-    'XRP': {'desc': "Legacy payment protocol designed for cross-border institutional and bank transfers.", 'utility': 70, 'decentralization': 40}, # Highly centralized by Ripple
-    'BNB': {'desc': "The native utility token of the Binance ecosystem, fueling the BNB Smart Chain and offering exchange discounts.", 'utility': 80, 'decentralization': 30}, # Effectively centralized by Binance
-    'DOGE': {'desc': "The original meme cryptocurrency. Features its own Proof of Work blockchain but lacks smart contract utility.", 'utility': 30, 'decentralization': 75}, # High wallet concentration limits decen score
-    'SHIB': {'desc': "An ERC-20 meme token attempting to build a broader DeFi ecosystem (Shibarium).", 'utility': 35, 'decentralization': 60}
+    'BTC': {'desc': "The decentralized digital gold.", 'utility': 95, 'decentralization': 100, 'staked': 0, 'target': 150000, 'trend_term': "Bitcoin"},
+    'ETH': {'desc': "The leading smart contract platform.", 'utility': 98, 'decentralization': 85, 'staked': 27, 'target': 8000, 'trend_term': "Ethereum"},
+    'SOL': {'desc': "High-speed monolithic L1 optimized for adoption.", 'utility': 90, 'decentralization': 55, 'staked': 68, 'target': 500, 'trend_term': "Solana"}, 
+    'SUI': {'desc': "Next-gen L1 built with Move programming language.", 'utility': 85, 'decentralization': 50, 'staked': 80, 'target': 5, 'trend_term': "Sui Crypto"}, 
+    'TAO': {'desc': "Decentralized open-source AI machine learning.", 'utility': 92, 'decentralization': 75, 'staked': 72, 'target': 1200, 'trend_term': "Bittensor"},
+    'LINK': {'desc': "Industry standard decentralized oracle network.", 'utility': 95, 'decentralization': 70, 'staked': 12, 'target': 50, 'trend_term': "Chainlink"},
+    'AVAX': {'desc': "Highly scalable subnet-focused smart contract platform.", 'utility': 85, 'decentralization': 65, 'staked': 55, 'target': 100, 'trend_term': "Avalanche Crypto"},
+    'ADA': {'desc': "Peer-reviewed, academic Proof of Stake blockchain.", 'utility': 75, 'decentralization': 80, 'staked': 63, 'target': 2.50, 'trend_term': "Cardano"},
+    'XRP': {'desc': "Legacy cross-border institutional payment protocol.", 'utility': 70, 'decentralization': 40, 'staked': 0, 'target': 2, 'trend_term': "XRP"},
+    'BNB': {'desc': "Binance ecosystem utility and smart chain token.", 'utility': 80, 'decentralization': 30, 'staked': 15, 'target': 1000, 'trend_term': "Binance Coin"},
+    'DOGE': {'desc': "The original PoW meme cryptocurrency.", 'utility': 30, 'decentralization': 75, 'staked': 0, 'target': 1.00, 'trend_term': "Dogecoin"},
+    'SHIB': {'desc': "ERC-20 meme token with building DeFi ecosystem.", 'utility': 35, 'decentralization': 60, 'staked': 2, 'target': 0.00008, 'trend_term': "Shiba Inu Coin"}
 }
 
 # --- DATA LOADERS ---
@@ -66,6 +71,18 @@ def get_fear_and_greed():
         return val, classification
     except:
         return 50, "Neutral"
+
+@st.cache_data(ttl=86400) # Cached for 24 hours to prevent Google IP blocking
+def get_google_trend(keyword):
+    """Fetches real-time 90-day Google Search interest (0-100) to find FOMO tops."""
+    try:
+        pytrends = TrendReq(hl='en-US', tz=360, timeout=(10,25))
+        pytrends.build_payload([keyword], cat=0, timeframe='today 3-m', geo='', gprop='')
+        df = pytrends.interest_over_time()
+        if not df.empty:
+            return int(df[keyword].iloc[-1])
+    except Exception: pass
+    return 50 # Default to neutral if Google blocks the request
 
 fng_val, fng_class = get_fear_and_greed()
 
@@ -210,12 +227,15 @@ def get_crypto_data(port_dict, global_fng_val):
                 macd_val, sig_val = macd_line.iloc[-1], signal_line.iloc[-1]
                 bb_upper, bb_lower = upper_b.iloc[-1], lower_b.iloc[-1]
 
-        # --- THE CONTINUOUS SPECTRUM CRYPTO ALGORITHM ---
+        # --- THE ALGORITHM ---
         score = 50.0 
         risk_points = 0
         
         tier = CRYPTO_TIERS.get(display_ticker, 4)
-        meta = CRYPTO_META.get(display_ticker, {'desc': 'No fundamental data available.', 'utility': 50, 'decentralization': 50})
+        meta = CRYPTO_META.get(display_ticker, {'desc': 'Standard asset.', 'utility': 50, 'decentralization': 50, 'staked': 0, 'target': 0, 'trend_term': f"{display_ticker} Crypto"})
+        
+        # Google Trends Fetch
+        google_fomo = get_google_trend(meta['trend_term'])
         
         tier_str = "Bluechip" if tier == 1 else "Utility/L1" if tier == 2 else "Meme" if tier == 3 else "Speculative/Alt"
         breakdown = [f"**Base Score:** 50 pts", f"🧬 **Project Classification:** Tier {tier} ({tier_str})"]
@@ -223,76 +243,60 @@ def get_crypto_data(port_dict, global_fng_val):
         if tier == 4: risk_points += 1 
         if tier == 3: risk_points += 1 
 
-        # 0. Fundamental Qualitatiave Adjustments
-        if meta['utility'] >= 85: 
-            score += 5; breakdown.append(f"🧠 **High Utility ({meta['utility']}):** +5 pts")
-        elif meta['utility'] < 50: 
-            score -= 5; breakdown.append(f"📉 **Low Utility/Meme ({meta['utility']}):** -5 pts")
+        # 0. Fundamental & Macro Targets
+        if meta['utility'] >= 85: score += 5; breakdown.append(f"🧠 **High Utility:** +5 pts")
+        elif meta['utility'] < 50: score -= 5; breakdown.append(f"📉 **Low Utility/Meme:** -5 pts")
             
-        if meta['decentralization'] >= 80: 
-            score += 5; breakdown.append(f"🌐 **Highly Decentralized ({meta['decentralization']}):** +5 pts")
-        elif meta['decentralization'] <= 50: 
-            score -= 5; breakdown.append(f"🐋 **Centralized/Whale Heavy ({meta['decentralization']}):** -5 pts")
+        if meta['decentralization'] >= 80: score += 5; breakdown.append(f"🌐 **Highly Decentralized:** +5 pts")
+        elif meta['decentralization'] <= 50: score -= 5; breakdown.append(f"🐋 **Centralized/Whale Heavy:** -5 pts")
+            
+        if meta['staked'] >= 50: score += 10; breakdown.append(f"🔒 **Massive Staking Lockup ({meta['staked']}%):** +10 pts (Supply Shock Risk)")
+        elif meta['staked'] >= 20: score += 5; breakdown.append(f"🔒 **Healthy Staking Lockup ({meta['staked']}%):** +5 pts")
+            
+        if meta['target'] > 0:
+            upside = ((meta['target'] - current_price) / current_price) * 100
+            if upside > 100: score += 10; breakdown.append(f"🎯 **Macro Upside (>100%):** +10 pts")
+            elif upside > 30: score += 5; breakdown.append(f"🎯 **Macro Upside (>30%):** +5 pts")
+            elif upside < 0: score -= 10; breakdown.append(f"🚨 **Above Macro Target:** -10 pts")
 
-        # 1. Historical Drawdown (Continuous Scaling)
+        # 1. Retail FOMO (Google Trends)
+        if google_fomo >= 85:
+            score -= 15; risk_points += 1
+            breakdown.append(f"🚨 **Extreme Retail FOMO (Search:{google_fomo}):** -15 pts (Blowout Top Warning)")
+        elif google_fomo <= 20:
+            score += 10
+            breakdown.append(f"🤫 **Silent Accumulation (Search:{google_fomo}):** +10 pts (No Retail Interest)")
+
+        # 2. Historical Drawdown
         dd_abs = abs(drawdown)
         if tier <= 2:
-            if dd_abs <= 10:
-                dd_pts = 0
-                breakdown.append(f"❌ **Drawdown ({drawdown:.1f}%):** +0 pts (Near ATH / FOMO Zone)")
-            elif dd_abs <= 40:
-                dd_pts = (dd_abs - 10) * (10.0 / 30.0) 
-                score += dd_pts
-                breakdown.append(f"✅ **Drawdown ({drawdown:.1f}%):** +{dd_pts:.1f} pts (Mild Discount)")
-            elif dd_abs <= 80:
-                dd_pts = 10.0 + ((dd_abs - 40.0) * (20.0 / 40.0)) 
-                score += dd_pts
-                breakdown.append(f"✅ **Drawdown ({drawdown:.1f}%):** +{dd_pts:.1f} pts (Deep Value Zone)")
-            else:
-                dd_pts = 30
-                score += dd_pts
-                breakdown.append(f"✅ **Drawdown ({drawdown:.1f}%):** +30 pts (Maximum Capitulation)")
+            if dd_abs <= 10: dd_pts = 0; breakdown.append(f"❌ **Near ATH ({drawdown:.1f}%):** +0 pts")
+            elif dd_abs <= 40: dd_pts = (dd_abs - 10) * (10.0 / 30.0); score += dd_pts; breakdown.append(f"✅ **Mild Discount ({drawdown:.1f}%):** +{dd_pts:.1f} pts")
+            elif dd_abs <= 80: dd_pts = 10.0 + ((dd_abs - 40.0) * (20.0 / 40.0)); score += dd_pts; breakdown.append(f"✅ **Deep Value ({drawdown:.1f}%):** +{dd_pts:.1f} pts")
+            else: dd_pts = 30; score += dd_pts; breakdown.append(f"✅ **Maximum Capitulation ({drawdown:.1f}%):** +30 pts")
         elif tier == 3: 
             if dd_abs <= 20: dd_pts = 0
             elif dd_abs <= 60: dd_pts = 10
             else: dd_pts = 15 
-            score += dd_pts
-            breakdown.append(f"⚠️ **Meme Drawdown ({drawdown:.1f}%):** +{dd_pts} pts (Risk Capped)")
+            score += dd_pts; breakdown.append(f"⚠️ **Meme Drawdown ({drawdown:.1f}%):** +{dd_pts} pts (Risk Capped)")
         else: 
-            if dd_abs > 80:
-                dd_pts = -20
-                score += dd_pts; risk_points += 2
-                breakdown.append(f"🚨 **Dead Altcoin Risk ({drawdown:.1f}%):** -20 pts (Likely abandoned) [+2 Risk]")
-            else:
-                breakdown.append(f"➖ **Altcoin Drawdown ({drawdown:.1f}%):** 0 pts")
+            if dd_abs > 80: score -= 20; risk_points += 2; breakdown.append(f"🚨 **Dead Altcoin Risk ({drawdown:.1f}%):** -20 pts [+2 Risk]")
 
-        # 2. Distance from 200 SMA
+        # 3. Distance from 200 SMA
         if sma_200 != 0 and current_price > 0:
             sma_dist = ((current_price - sma_200) / sma_200) * 100
-            if sma_dist > 60:
-                sma_pts = -15
-                breakdown.append(f"❌ **SMA Ext ({sma_dist:+.1f}%):** {sma_pts} pts (Severely Overextended)")
-            elif sma_dist > 20:
-                sma_pts = -5
-                breakdown.append(f"⚠️ **SMA Ext ({sma_dist:+.1f}%):** {sma_pts} pts (Cooling Off Needed)")
-            elif sma_dist >= 0:
-                sma_pts = 15.0 - (sma_dist * 0.75) 
-                breakdown.append(f"✅ **SMA Ext ({sma_dist:+.1f}%):** +{sma_pts:.1f} pts (Fresh Breakout / Support)")
-            elif sma_dist >= -20:
-                sma_pts = 10.0 + (sma_dist * 0.5) 
-                breakdown.append(f"✅ **SMA Ext ({sma_dist:+.1f}%):** +{sma_pts:.1f} pts (Accumulating just under trend)")
-            else:
-                sma_pts = -10
-                breakdown.append(f"❌ **SMA Ext ({sma_dist:+.1f}%):** {sma_pts} pts (Macro Breakdown)")
+            if sma_dist > 60: sma_pts = -15; breakdown.append(f"❌ **SMA Ext ({sma_dist:+.1f}%):** {sma_pts} pts (Severely Overextended)")
+            elif sma_dist > 20: sma_pts = -5; breakdown.append(f"⚠️ **SMA Ext ({sma_dist:+.1f}%):** {sma_pts} pts (Cooling Off Needed)")
+            elif sma_dist >= 0: sma_pts = 15.0 - (sma_dist * 0.75); breakdown.append(f"✅ **SMA Ext ({sma_dist:+.1f}%):** +{sma_pts:.1f} pts (Fresh Breakout)")
+            elif sma_dist >= -20: sma_pts = 10.0 + (sma_dist * 0.5); breakdown.append(f"✅ **SMA Ext ({sma_dist:+.1f}%):** +{sma_pts:.1f} pts (Accumulating)")
+            else: sma_pts = -10; breakdown.append(f"❌ **SMA Ext ({sma_dist:+.1f}%):** {sma_pts} pts (Macro Breakdown)")
             score += sma_pts
 
         if sma_50 > 0 and sma_200 > 0:
-            if sma_50 > sma_200:
-                score += 5; breakdown.append("✅ **Golden Cross:** +5 pts")
-            else:
-                score -= 5; breakdown.append("❌ **Death Cross:** -5 pts")
+            if sma_50 > sma_200: score += 5; breakdown.append("✅ **Golden Cross:** +5 pts")
+            else: score -= 5; breakdown.append("❌ **Death Cross:** -5 pts")
 
-        # 3. RSI Momentum
+        # 4. RSI Momentum
         if isinstance(rsi_14, (float, int)):
             if rsi_14 < 30: rsi_pts = 15
             elif rsi_14 < 40: rsi_pts = 10
@@ -300,29 +304,15 @@ def get_crypto_data(port_dict, global_fng_val):
             elif rsi_14 < 65: rsi_pts = 0
             elif rsi_14 < 75: rsi_pts = -10
             else: rsi_pts = -20
-            score += rsi_pts
-            breakdown.append(f"{'✅' if rsi_pts > 0 else '❌' if rsi_pts < 0 else '➖'} **RSI ({rsi_14}):** {rsi_pts:+} pts")
-
-        # 4. Bollinger Bands Positioning
-        if isinstance(bb_upper, (float, int)) and isinstance(bb_lower, (float, int)) and bb_upper != bb_lower:
-            bb_pos = ((current_price - bb_lower) / (bb_upper - bb_lower)) * 100
-            if bb_pos < 0: bb_pts = 10
-            elif bb_pos < 20: bb_pts = 5
-            elif bb_pos < 80: bb_pts = 0
-            elif bb_pos <= 100: bb_pts = -5
-            else: bb_pts = -10
-            score += bb_pts
-            breakdown.append(f"{'✅' if bb_pts > 0 else '❌' if bb_pts < 0 else '➖'} **BB Position ({bb_pos:.0f}%):** {bb_pts:+} pts")
+            score += rsi_pts; breakdown.append(f"{'✅' if rsi_pts > 0 else '❌' if rsi_pts < 0 else '➖'} **RSI ({rsi_14}):** {rsi_pts:+} pts")
 
         # 5. OBV & MACD
-        if obv_trend == "Accumulating":
-            score += 5; breakdown.append(f"🐋 **OBV:** +5 pts (Whale Accumulation)")
-        elif obv_trend == "Distributing":
-            score -= 5; breakdown.append(f"🚨 **OBV:** -5 pts (Whale Distribution)")
+        if obv_trend == "Accumulating": score += 5; breakdown.append(f"🐋 **OBV:** +5 pts (Whale Accumulation)")
+        elif obv_trend == "Distributing": score -= 5; breakdown.append(f"🚨 **OBV:** -5 pts (Whale Distribution)")
 
         if isinstance(macd_val, (float, int)) and isinstance(sig_val, (float, int)):
-            if macd_val > sig_val: score += 5; breakdown.append("✅ **MACD:** +5 pts (Bullish)")
-            else: score -= 5; breakdown.append("❌ **MACD:** -5 pts (Bearish)")
+            if macd_val > sig_val: score += 5
+            else: score -= 5
 
         # 6. Global Sentiment Modifier
         fng_adj = (50 - global_fng_val) * 0.2 
@@ -352,7 +342,8 @@ def get_crypto_data(port_dict, global_fng_val):
             'Ticker': display_ticker, 'Val': val, 'Price': current_price, 'Shares': shares, 'Avg': avg_price,
             'Drawdown': drawdown, 'ATH': ath, 'SMA_50': sma_50, 'SMA_200': sma_200,
             'RSI': rsi_14, 'MACD': macd_val, 'MACD_Sig': sig_val, 'Vol': volatility, 'Tier': tier, 'OBV': obv_trend,
-            'Meta_Desc': meta['desc'], 'Meta_Util': meta['utility'], 'Meta_Decen': meta['decentralization'],
+            'Meta_Desc': meta['desc'], 'Meta_Util': meta['utility'], 'Meta_Decen': meta['decentralization'], 
+            'Meta_Staked': meta['staked'], 'Meta_Target': meta['target'], 'Meta_Google': google_fomo,
             'Score': int(score), 'Decision': decision, 'D_Color': d_color, 'Risk': risk_lvl, 'R_Color': r_color, 'Risk_Pts': risk_points,
             'Upper_BB': bb_upper, 'Lower_BB': bb_lower,
             'Breakdown': breakdown
@@ -363,7 +354,6 @@ def get_crypto_data(port_dict, global_fng_val):
 
 # --- UI HELPER: SCORE CARD COMPONENT ---
 def render_score_card(coin, today_date, score_history=None, is_watchlist=False, hide_dollars=False):
-    """Reusable function to draw just the analysis score card without charts."""
     ticker = coin['Ticker']
     
     signal_tooltips = {
@@ -462,7 +452,6 @@ def render_score_card(coin, today_date, score_history=None, is_watchlist=False, 
 
 # --- UI HELPER: FULL ROW WITH NEW LAYOUT ---
 def draw_crypto_row(coin, histories, today_date, is_watchlist=False, hide_dollars=False, score_history=None):
-    # New Layout: 1.5 (Scorecard) | 1.5 (Fundamentals) | 3 (Single Interactive Chart)
     cols = st.columns([1.5, 1.5, 3]) 
     
     with cols[0]:
@@ -474,17 +463,29 @@ def draw_crypto_row(coin, histories, today_date, is_watchlist=False, hide_dollar
         
         util_val = coin['Meta_Util']
         util_color = "green" if util_val >= 80 else ("orange" if util_val >= 50 else "red")
-        st.markdown(f"**Utility & Tech Score:** :{util_color}[**{util_val}/100**]")
+        st.markdown(f"**Utility & Tech:** :{util_color}[**{util_val}/100**]")
         st.progress(util_val / 100)
         
         decen_val = coin['Meta_Decen']
         decen_color = "green" if decen_val >= 75 else ("orange" if decen_val >= 50 else "red")
-        st.markdown(f"**Decentralization Score:** :{decen_color}[**{decen_val}/100**]")
+        st.markdown(f"**Decentralization:** :{decen_color}[**{decen_val}/100**]")
         st.progress(decen_val / 100)
         
-        # Explain the decentralization score slightly
-        if decen_val <= 50:
-            st.caption("⚠️ *Warning: High token concentration among insiders/whales or VC control.*")
+        # --- NEW: Staking, Target, and Search Trends! ---
+        st.markdown("---")
+        subA, subB = st.columns(2)
+        with subA:
+            stk = coin['Meta_Staked']
+            st.write(f"**Staked (Locked):** {stk}%")
+            
+            tgt = coin['Meta_Target']
+            tgt_str = f"${tgt:,.2f}" if tgt > 0 else "N/A"
+            st.write(f"**Macro Target:** {tgt_str}")
+        with subB:
+            # Google Search FOMO Rating
+            g_fomo = coin['Meta_Google']
+            g_color = "red" if g_fomo > 80 else ("green" if g_fomo < 30 else "gray")
+            st.markdown(f"**Retail FOMO:** :{g_color}[{g_fomo}/100]")
             
     ticker = coin['Ticker']
     yf_ticker = f"{ticker}-USD" if not ticker.endswith("-USD") else ticker
@@ -505,7 +506,6 @@ def draw_crypto_row(coin, histories, today_date, is_watchlist=False, hide_dollar
         with cols[2]:
             fig = go.Figure()
             
-            # Draw the unified chart components
             if 'Score' in master_hist.columns and not master_hist['Score'].dropna().empty:
                 fig.add_trace(go.Scatter(x=master_hist.index, y=master_hist['Score'], mode='lines', name='Crypto Score', line=dict(color='rgba(255, 0, 255, 0.4)', width=2, dash='dot'), yaxis='y2'))
 
@@ -525,7 +525,6 @@ def draw_crypto_row(coin, histories, today_date, is_watchlist=False, hide_dollar
             if coin['Avg'] > 0:
                 fig.add_hline(y=coin['Avg'], line_dash="dot", line_color="deepskyblue", line_width=2, opacity=0.8)
             
-            # --- NEW: INTERACTIVE TIMEFRAME TOGGLES ---
             fig.update_layout(
                 margin=dict(l=0, r=0, t=10, b=0),
                 xaxis=dict(
@@ -556,10 +555,9 @@ def draw_crypto_row(coin, histories, today_date, is_watchlist=False, hide_dollar
 st.title("₿ Nightshift Crypto Command Center")
 today = pd.Timestamp.today().tz_localize(None)
 
-# --- FEAR & GREED INDEX WIDGET ---
 fng_color = "red" if fng_val < 30 else ("orange" if fng_val < 50 else ("green" if fng_val < 75 else "darkgreen"))
 st.markdown(f"**🌍 Global Market Sentiment:** :{fng_color}[**{fng_val}/100 ({fng_class})**]")
-st.markdown("*Note: The algorithm is dynamically altering scores based on this global sentiment to enforce a contrarian strategy.*")
+st.markdown("*Note: The algorithm dynamically alters scores based on macro sentiment and Google Search trends.*")
 
 global_scores_df = load_score_history()
 st.divider()
