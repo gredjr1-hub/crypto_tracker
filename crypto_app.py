@@ -49,7 +49,6 @@ def get_fear_and_greed():
     except:
         return 50, "Neutral"
 
-# Fetch Global Sentiment once at the top so the algorithm can use it!
 fng_val, fng_class = get_fear_and_greed()
 
 # --- ALGORITHMIC HELPER FUNCTIONS ---
@@ -76,9 +75,7 @@ def calculate_bbands(series, window=20, num_std=2):
     lower = rolling_mean - (rolling_std * num_std)
     return upper, lower
 
-# --- NEW: ON-BALANCE VOLUME (OBV) CALCULATOR ---
 def calculate_obv(close, volume):
-    """Calculates On-Balance Volume to track Smart Money/Whale accumulation."""
     obv = (np.sign(close.diff()) * volume).fillna(0).cumsum()
     return obv
 
@@ -176,7 +173,6 @@ def get_crypto_data(port_dict, global_fng_val):
             hist['50_SMA'] = hist['Close'].rolling(window=50).mean()
             hist['200_SMA'] = hist['Close'].rolling(window=200).mean()
             
-            # OBV Calculation
             hist['OBV'] = calculate_obv(hist['Close'], hist['Volume'])
             hist['OBV_SMA_20'] = hist['OBV'].rolling(window=20).mean()
             
@@ -198,8 +194,8 @@ def get_crypto_data(port_dict, global_fng_val):
                 macd_val, sig_val = macd_line.iloc[-1], signal_line.iloc[-1]
                 bb_upper, bb_lower = upper_b.iloc[-1], lower_b.iloc[-1]
 
-        # --- THE CROSS-REFERENCED CRYPTO ALGORITHM ---
-        score = 50 
+        # --- THE CONTINUOUS SPECTRUM CRYPTO ALGORITHM ---
+        score = 50.0 
         risk_points = 0
         
         tier = CRYPTO_TIERS.get(display_ticker, 4)
@@ -209,53 +205,101 @@ def get_crypto_data(port_dict, global_fng_val):
         if tier == 4: risk_points += 1 
         if tier == 3: risk_points += 1 
 
-        # 1. Global Sentiment Cross-Reference
-        if global_fng_val < 30:
-            score += 10
-            breakdown.append(f"✅ **Market Capitulation (<30 F&G):** +10 pts (Contrarian Macro Buy)")
-        elif global_fng_val > 75:
-            score -= 10
-            breakdown.append(f"❌ **Market Euphoria (>75 F&G):** -10 pts (Take Profit / High Risk Zone)")
+        # 1. Historical Drawdown (Continuous Scaling)
+        dd_abs = abs(drawdown)
+        if tier <= 2:
+            if dd_abs <= 10:
+                dd_pts = 0
+                breakdown.append(f"❌ **Drawdown ({drawdown:.1f}%):** +0 pts (Near ATH / FOMO Zone)")
+            elif dd_abs <= 40:
+                dd_pts = (dd_abs - 10) * (10.0 / 30.0) # Scales 0 to 10 linearly
+                score += dd_pts
+                breakdown.append(f"✅ **Drawdown ({drawdown:.1f}%):** +{dd_pts:.1f} pts (Mild Discount)")
+            elif dd_abs <= 80:
+                dd_pts = 10.0 + ((dd_abs - 40.0) * (20.0 / 40.0)) # Scales 10 to 30 linearly
+                score += dd_pts
+                breakdown.append(f"✅ **Drawdown ({drawdown:.1f}%):** +{dd_pts:.1f} pts (Deep Value Zone)")
+            else:
+                dd_pts = 30
+                score += dd_pts
+                breakdown.append(f"✅ **Drawdown ({drawdown:.1f}%):** +30 pts (Maximum Capitulation)")
+        elif tier == 3: # Memecoins cap out
+            if dd_abs <= 20: dd_pts = 0
+            elif dd_abs <= 60: dd_pts = 10
+            else: dd_pts = 15 
+            score += dd_pts
+            breakdown.append(f"⚠️ **Meme Drawdown ({drawdown:.1f}%):** +{dd_pts} pts (Risk Capped)")
+        else: # Altcoin death zone
+            if dd_abs > 80:
+                dd_pts = -20
+                score += dd_pts; risk_points += 2
+                breakdown.append(f"🚨 **Dead Altcoin Risk ({drawdown:.1f}%):** -20 pts (Likely abandoned) [+2 Risk]")
+            else:
+                breakdown.append(f"➖ **Altcoin Drawdown ({drawdown:.1f}%):** 0 pts")
 
-        # 2. On-Chain/Whale Accumulation (OBV Cross-Reference)
-        if obv_trend == "Accumulating":
-            score += 10
-            breakdown.append(f"🐋 **OBV Accumulation:** +10 pts (Smart Money is buying the dips)")
-        elif obv_trend == "Distributing":
-            score -= 10
-            breakdown.append(f"🚨 **OBV Distribution:** -10 pts (Whales are taking profits / selling)")
+        # 2. Distance from 200 SMA (Continuous Mapping)
+        if sma_200 != 0 and current_price > 0:
+            sma_dist = ((current_price - sma_200) / sma_200) * 100
+            if sma_dist > 60:
+                sma_pts = -15
+                breakdown.append(f"❌ **SMA Ext ({sma_dist:+.1f}%):** {sma_pts} pts (Severely Overextended)")
+            elif sma_dist > 20:
+                sma_pts = -5
+                breakdown.append(f"⚠️ **SMA Ext ({sma_dist:+.1f}%):** {sma_pts} pts (Cooling Off Needed)")
+            elif sma_dist >= 0:
+                sma_pts = 15.0 - (sma_dist * 0.75) # E.g., 0% = 15 pts, 20% = 0 pts
+                breakdown.append(f"✅ **SMA Ext ({sma_dist:+.1f}%):** +{sma_pts:.1f} pts (Fresh Breakout / Support)")
+            elif sma_dist >= -20:
+                sma_pts = 10.0 + (sma_dist * 0.5) # E.g., 0% = 10 pts, -20% = 0 pts
+                breakdown.append(f"✅ **SMA Ext ({sma_dist:+.1f}%):** +{sma_pts:.1f} pts (Accumulating just under trend)")
+            else:
+                sma_pts = -10
+                breakdown.append(f"❌ **SMA Ext ({sma_dist:+.1f}%):** {sma_pts} pts (Macro Breakdown)")
+            score += sma_pts
 
-        # 3. Structural Trends
-        if sma_200 != 0 and sma_50 != 0:
-            if current_price > sma_200: 
-                score += 10; breakdown.append("✅ **Price > 200 SMA:** +10 pts")
-            else: 
-                score -= 10; risk_points += 1; breakdown.append("❌ **Price < 200 SMA:** -10 pts [+1 Risk]")
-                
+        if sma_50 > 0 and sma_200 > 0:
             if sma_50 > sma_200:
                 score += 5; breakdown.append("✅ **Golden Cross:** +5 pts")
             else:
                 score -= 5; breakdown.append("❌ **Death Cross:** -5 pts")
 
-        # 4. Historical Drawdown (Tier-Adjusted)
-        if drawdown < -75:
-            if tier <= 2: score += 15; breakdown.append(f"✅ **Deep Value Bluechip/Utility:** +15 pts")
-            elif tier == 3: breakdown.append(f"➖ **Crashed Meme Coin:** +0 pts")
-            else: score -= 15; risk_points += 2; breakdown.append(f"❌ **Dead Altcoin Risk:** -15 pts [+2 Risk]")
-        elif drawdown < -40:
-            if tier <= 2: score += 10; breakdown.append(f"✅ **Healthy Drawdown:** +10 pts")
-        elif drawdown > -10:
-            score -= 10; breakdown.append(f"❌ **Near ATH:** -10 pts (FOMO Risk)")
-            
-        # 5. Short-Term Momentum
+        # 3. RSI Momentum (Tiered Spectrum)
         if isinstance(rsi_14, (float, int)):
-            if rsi_14 < 35: score += 5; breakdown.append("✅ **RSI Oversold:** +5 pts")
-            elif rsi_14 > 70: score -= 5; risk_points += 1; breakdown.append("❌ **RSI Overbought:** -5 pts [+1 Risk]")
-                
-        if isinstance(bb_upper, (float, int)) and current_price > 0:
-            if current_price < bb_lower: score += 5; breakdown.append("✅ **Below Lower BB:** +5 pts")
-            elif current_price > bb_upper: score -= 5; breakdown.append("❌ **Above Upper BB:** -5 pts")
-            
+            if rsi_14 < 30: rsi_pts = 15
+            elif rsi_14 < 40: rsi_pts = 10
+            elif rsi_14 < 55: rsi_pts = 5
+            elif rsi_14 < 65: rsi_pts = 0
+            elif rsi_14 < 75: rsi_pts = -10
+            else: rsi_pts = -20
+            score += rsi_pts
+            breakdown.append(f"{'✅' if rsi_pts > 0 else '❌' if rsi_pts < 0 else '➖'} **RSI ({rsi_14}):** {rsi_pts:+} pts")
+
+        # 4. Bollinger Bands Positioning (Spectrum)
+        if isinstance(bb_upper, (float, int)) and isinstance(bb_lower, (float, int)) and bb_upper != bb_lower:
+            bb_pos = ((current_price - bb_lower) / (bb_upper - bb_lower)) * 100
+            if bb_pos < 0: bb_pts = 10
+            elif bb_pos < 20: bb_pts = 5
+            elif bb_pos < 80: bb_pts = 0
+            elif bb_pos <= 100: bb_pts = -5
+            else: bb_pts = -10
+            score += bb_pts
+            breakdown.append(f"{'✅' if bb_pts > 0 else '❌' if bb_pts < 0 else '➖'} **BB Position ({bb_pos:.0f}%):** {bb_pts:+} pts")
+
+        # 5. OBV & MACD
+        if obv_trend == "Accumulating":
+            score += 5; breakdown.append(f"🐋 **OBV:** +5 pts (Whale Accumulation)")
+        elif obv_trend == "Distributing":
+            score -= 5; breakdown.append(f"🚨 **OBV:** -5 pts (Whale Distribution)")
+
+        if isinstance(macd_val, (float, int)) and isinstance(sig_val, (float, int)):
+            if macd_val > sig_val: score += 5; breakdown.append("✅ **MACD:** +5 pts (Bullish)")
+            else: score -= 5; breakdown.append("❌ **MACD:** -5 pts (Bearish)")
+
+        # 6. Global Sentiment Modifier (Continuous Contrarian Rule)
+        fng_adj = (50 - global_fng_val) * 0.2 
+        score += fng_adj
+        breakdown.append(f"{'✅' if fng_adj > 0 else '❌' if fng_adj < 0 else '➖'} **F&G Contrarian ({global_fng_val}):** {fng_adj:+.1f} pts")
+
         if volatility > 100: risk_points += 2; breakdown.append("⚠️ **Extreme Volatility (>100%):** [+2 Risk]")
         elif volatility < 40: risk_points -= 1; breakdown.append("🛡️ **Low Volatility (<40%):** [-1 Risk]")
 
@@ -279,7 +323,7 @@ def get_crypto_data(port_dict, global_fng_val):
             'Ticker': display_ticker, 'Val': val, 'Price': current_price, 'Shares': shares, 'Avg': avg_price,
             'Drawdown': drawdown, 'ATH': ath, 'SMA_50': sma_50, 'SMA_200': sma_200,
             'RSI': rsi_14, 'MACD': macd_val, 'MACD_Sig': sig_val, 'Vol': volatility, 'Tier': tier, 'OBV': obv_trend,
-            'Score': score, 'Decision': decision, 'D_Color': d_color, 'Risk': risk_lvl, 'R_Color': r_color, 'Risk_Pts': risk_points,
+            'Score': int(score), 'Decision': decision, 'D_Color': d_color, 'Risk': risk_lvl, 'R_Color': r_color, 'Risk_Pts': risk_points,
             'Upper_BB': bb_upper, 'Lower_BB': bb_lower,
             'Breakdown': breakdown
         })
@@ -315,7 +359,7 @@ def draw_crypto_row(coin, histories, today_date, is_watchlist=False, hide_dollar
                 <div style="display: flex; gap: 10px; font-size: 13px; margin-bottom: 10px;">
                     <a href='https://finance.yahoo.com/quote/{ticker}-USD' target='_blank' style='text-decoration: none;'>📈 Price Chart</a>
                     <a href='{arkham_url}' target='_blank' style='text-decoration: none;'>🐋 Arkham (Whales)</a>
-                    <a href='{dune_url}' target='_blank' style='text-decoration: none;'>📊 Dune Analytics</a>
+                    <a href='{dune_url}' target='_blank' style='text-decoration: none;'>📊 Dune Dashboards</a>
                 </div>
                 """, 
                 unsafe_allow_html=True
@@ -368,7 +412,6 @@ def draw_crypto_row(coin, histories, today_date, is_watchlist=False, hide_dollar
         with sub2:
             st.write(f"**RSI:** {coin['RSI']}")
             
-            # Updated to show the new OBV logic on the card!
             obv_color = "green" if coin['OBV'] == "Accumulating" else "red"
             st.markdown(f"**Whale Vol:** :{obv_color}[{coin['OBV']}]")
             
@@ -460,7 +503,6 @@ search_query = st.text_input("Enter Coin Symbol (e.g. BTC, ETH, SOL, LINK):", ""
 
 if search_query:
     with st.spinner(f"Running historical breakdown on {search_query}..."):
-        # WE NOW PASS THE FEAR AND GREED VALUE INTO THE SCORING ENGINE!
         search_data, search_hist, _ = get_crypto_data({search_query: {'shares': 0, 'avg_price': 0}}, fng_val)
         if search_data and search_data[0]['Price'] > 0:
             col1, col2 = st.columns([8, 1])
