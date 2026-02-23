@@ -24,17 +24,13 @@ if 'crypto_portfolio' not in st.session_state:
 
 st.set_page_config(page_title="Crypto Quant Command Center", layout="wide", page_icon="₿")
 
-# --- YAHOO FINANCE TICKER MAP (FIXES SUI, TAO, PEPE, ETC) ---
+# --- YAHOO FINANCE TICKER MAP ---
 YF_TICKER_MAP = {
-    'SUI': 'SUI20947-USD',
-    'TAO': 'TAO22974-USD',
-    'PEPE': 'PEPE24478-USD',
-    'WIF': 'WIF28507-USD',
-    'BONK': 'BONK23095-USD',
-    'TON': 'TON11419-USD',
-    'APT': 'APT21794-USD',
-    'OP': 'OP21594-USD',
-    'UNI': 'UNI7083-USD'
+    'SUI': 'SUI20947-USD', 'TAO': 'TAO22974-USD', 'PEPE': 'PEPE24478-USD', 'WIF': 'WIF28507-USD',
+    'BONK': 'BONK23095-USD', 'TON': 'TON11419-USD', 'APT': 'APT21794-USD', 'OP': 'OP21594-USD',
+    'UNI': 'UNI7083-USD', 'DOT': 'DOT-USD', 'MATIC': 'MATIC-USD', 'NEAR': 'NEAR-USD', 'INJ': 'INJ-USD',
+    'FIL': 'FIL-USD', 'LDO': 'LDO-USD', 'AR': 'AR-USD', 'RNDR': 'RNDR-USD', 'FTM': 'FTM-USD', 
+    'HBAR': 'HBAR-USD', 'BCH': 'BCH-USD', 'XLM': 'XLM-USD', 'TRX': 'TRX-USD', 'LTC': 'LTC-USD'
 }
 
 def get_yf_ticker(symbol):
@@ -45,6 +41,7 @@ def get_yf_ticker(symbol):
 CRYPTO_TIERS = {
     'BTC': 1, 'ETH': 1, 
     'SOL': 2, 'ADA': 2, 'AVAX': 2, 'DOT': 2, 'LINK': 2, 'MATIC': 2, 'NEAR': 2, 'APT': 2, 'OP': 2, 'INJ': 2, 'XRP': 2, 'BNB': 2, 'TRX': 2, 'LTC': 2, 'SUI': 2, 'TAO': 2,
+    'FIL': 2, 'LDO': 2, 'AR': 2, 'RNDR': 2, 'FTM': 2, 'HBAR': 2, 'TON': 2, 'BCH': 2, 'UNI': 2, 'XLM': 2,
     'DOGE': 3, 'SHIB': 3, 'PEPE': 3, 'FLOKI': 3, 'BONK': 3, 'WIF': 3 
 }
 
@@ -52,8 +49,8 @@ CRYPTO_TIERS = {
 CRYPTO_META = {
     'BTC': {'desc': "The decentralized digital gold.", 'utility': 95, 'decentralization': 100, 'staked': 0, 'target': 150000, 'trend_term': "Bitcoin"},
     'ETH': {'desc': "The leading smart contract platform.", 'utility': 98, 'decentralization': 85, 'staked': 27, 'target': 8000, 'trend_term': "Ethereum"},
-    'SOL': {'desc': "High-speed monolithic L1 optimized for adoption.", 'utility': 90, 'decentralization': 55, 'staked': 68, 'target': 500, 'trend_term': "Solana"}, 
-    'SUI': {'desc': "Next-gen L1 built with Move programming language.", 'utility': 85, 'decentralization': 50, 'staked': 80, 'target': 5, 'trend_term': "Sui Crypto"}, 
+    'SOL': {'desc': "High-speed monolithic L1 optimized for adoption.", 'utility': 90, 'decentralization': 50, 'staked': 68, 'target': 500, 'trend_term': "Solana"}, 
+    'SUI': {'desc': "Next-gen L1 built with Move programming language.", 'utility': 85, 'decentralization': 45, 'staked': 80, 'target': 5, 'trend_term': "Sui Crypto"}, 
     'TAO': {'desc': "Decentralized open-source AI machine learning.", 'utility': 92, 'decentralization': 75, 'staked': 72, 'target': 1200, 'trend_term': "Bittensor"},
     'LINK': {'desc': "Industry standard decentralized oracle network.", 'utility': 95, 'decentralization': 70, 'staked': 12, 'target': 50, 'trend_term': "Chainlink"},
     'AVAX': {'desc': "Highly scalable subnet-focused smart contract platform.", 'utility': 85, 'decentralization': 65, 'staked': 55, 'target': 100, 'trend_term': "Avalanche Crypto"},
@@ -61,7 +58,26 @@ CRYPTO_META = {
     'XRP': {'desc': "Legacy cross-border institutional payment protocol.", 'utility': 70, 'decentralization': 40, 'staked': 0, 'target': 2, 'trend_term': "XRP"},
     'BNB': {'desc': "Binance ecosystem utility and smart chain token.", 'utility': 80, 'decentralization': 30, 'staked': 15, 'target': 1000, 'trend_term': "Binance Coin"},
     'DOGE': {'desc': "The original PoW meme cryptocurrency.", 'utility': 30, 'decentralization': 75, 'staked': 0, 'target': 1.00, 'trend_term': "Dogecoin"},
-    'SHIB': {'desc': "ERC-20 meme token with building DeFi ecosystem.", 'utility': 35, 'decentralization': 60, 'staked': 2, 'target': 0.00008, 'trend_term': "Shiba Inu Coin"}
+    'SHIB': {'desc': "ERC-20 meme token with building DeFi ecosystem.", 'utility': 35, 'decentralization': 60, 'staked': 2, 'target': 0.00008, 'trend_term': "Shiba Inu Coin"},
+    'DOT': {'desc': "Interoperability network connecting bespoke parachains.", 'utility': 80, 'decentralization': 75, 'staked': 52, 'target': 25, 'trend_term': "Polkadot Crypto"},
+    'MATIC': {'desc': "Ethereum's premier L2 scaling solution (Polygon).", 'utility': 85, 'decentralization': 60, 'staked': 35, 'target': 2.00, 'trend_term': "Polygon Crypto"},
+    'NEAR': {'desc': "Highly scalable, sharded Proof-of-Stake L1.", 'utility': 80, 'decentralization': 65, 'staked': 45, 'target': 15, 'trend_term': "Near Protocol"},
+    'APT': {'desc': "High-performance L1 spun out of Facebook's Diem project.", 'utility': 80, 'decentralization': 40, 'staked': 80, 'target': 30, 'trend_term': "Aptos Crypto"},
+    'OP': {'desc': "Optimistic rollup L2 scaling network for Ethereum.", 'utility': 85, 'decentralization': 50, 'staked': 20, 'target': 8, 'trend_term': "Optimism Crypto"},
+    'INJ': {'desc': "App-specific L1 built for decentralized finance.", 'utility': 80, 'decentralization': 65, 'staked': 50, 'target': 60, 'trend_term': "Injective Protocol"},
+    'FIL': {'desc': "Decentralized storage network designed to store humanity's info.", 'utility': 85, 'decentralization': 70, 'staked': 30, 'target': 15, 'trend_term': "Filecoin"},
+    'LDO': {'desc': "The dominant liquid staking protocol for Ethereum.", 'utility': 90, 'decentralization': 40, 'staked': 10, 'target': 5, 'trend_term': "Lido Crypto"},
+    'AR': {'desc': "Decentralized permaweb for immutable data storage.", 'utility': 80, 'decentralization': 75, 'staked': 20, 'target': 60, 'trend_term': "Arweave"},
+    'RNDR': {'desc': "Distributed GPU rendering network for creators.", 'utility': 85, 'decentralization': 60, 'staked': 0, 'target': 15, 'trend_term': "Render Crypto"},
+    'FTM': {'desc': "High-performance DAG smart contract platform.", 'utility': 75, 'decentralization': 60, 'staked': 45, 'target': 2, 'trend_term': "Fantom Crypto"},
+    'HBAR': {'desc': "Enterprise-grade Hashgraph distributed ledger.", 'utility': 80, 'decentralization': 40, 'staked': 40, 'target': 0.20, 'trend_term': "Hedera Hashgraph"},
+    'PEPE': {'desc': "A purely speculative frog-themed meme coin.", 'utility': 10, 'decentralization': 60, 'staked': 0, 'target': 0, 'trend_term': "Pepe Coin"},
+    'TON': {'desc': "The Open Network L1 closely tied to Telegram.", 'utility': 80, 'decentralization': 40, 'staked': 35, 'target': 15, 'trend_term': "Toncoin"},
+    'BCH': {'desc': "Bitcoin fork engineered specifically for daily payments.", 'utility': 60, 'decentralization': 80, 'staked': 0, 'target': 1000, 'trend_term': "Bitcoin Cash"},
+    'UNI': {'desc': "The leading decentralized exchange and AMM on Ethereum.", 'utility': 90, 'decentralization': 60, 'staked': 0, 'target': 20, 'trend_term': "Uniswap"},
+    'XLM': {'desc': "Payments network for fast, low-cost global transfers.", 'utility': 70, 'decentralization': 50, 'staked': 0, 'target': 0.50, 'trend_term': "Stellar Lumens"},
+    'TRX': {'desc': "Entertainment-focused L1 dominating the Tether market.", 'utility': 75, 'decentralization': 40, 'staked': 50, 'target': 0.20, 'trend_term': "Tron Crypto"},
+    'LTC': {'desc': "One of the oldest PoW coins, known as digital silver.", 'utility': 60, 'decentralization': 90, 'staked': 0, 'target': 150, 'trend_term': "Litecoin"}
 }
 
 # --- DATA LOADERS ---
@@ -88,14 +104,15 @@ def get_fear_and_greed():
 
 @st.cache_data(ttl=86400) 
 def get_google_trend(keyword):
+    """Fetches real-time Google Search interest. Returns None if Google blocks the API call."""
     try:
-        pytrends = TrendReq(hl='en-US', tz=360, timeout=(10,25))
+        pytrends = TrendReq(hl='en-US', tz=360, timeout=(5,10), retries=2, backoff_factor=0.5)
         pytrends.build_payload([keyword], cat=0, timeframe='today 3-m', geo='', gprop='')
         df = pytrends.interest_over_time()
         if not df.empty:
             return int(df[keyword].iloc[-1])
     except Exception: pass
-    return 50 
+    return None # Return None when rate-limited so it doesn't falsely anchor to 50
 
 fng_val, fng_class = get_fear_and_greed()
 
@@ -240,11 +257,11 @@ def get_crypto_data(port_dict, global_fng_val):
                 bb_upper, bb_lower = upper_b.iloc[-1], lower_b.iloc[-1]
 
         # --- THE HARSHER CONTINUOUS CRYPTO ALGORITHM ---
-        score = 30.0 # LOWERED BASE SCORE
+        score = 30.0 
         risk_points = 0
         
         tier = CRYPTO_TIERS.get(display_ticker, 4)
-        meta = CRYPTO_META.get(display_ticker, {'desc': 'Standard asset.', 'utility': 50, 'decentralization': 50, 'staked': 0, 'target': 0, 'trend_term': f"{display_ticker} Crypto"})
+        meta = CRYPTO_META.get(display_ticker, {'desc': 'No custom fundamentals available. Treat as high-risk altcoin.', 'utility': 30, 'decentralization': 40, 'staked': 0, 'target': 0, 'trend_term': f"{display_ticker} Crypto"})
         
         google_fomo = get_google_trend(meta['trend_term'])
         
@@ -254,31 +271,47 @@ def get_crypto_data(port_dict, global_fng_val):
         if tier == 4: risk_points += 1 
         if tier == 3: risk_points += 1 
 
-        # 0. Fundamental & Macro Targets (Harsher Penalties)
+        # 0. Fundamental & Staking (Supply Shock)
         if meta['utility'] >= 85: score += 5; breakdown.append(f"🧠 **High Utility:** +5 pts")
         elif meta['utility'] < 50: score -= 10; breakdown.append(f"📉 **Low Utility/Meme:** -10 pts")
             
         if meta['decentralization'] >= 80: score += 5; breakdown.append(f"🌐 **Highly Decentralized:** +5 pts")
         elif meta['decentralization'] <= 50: score -= 10; breakdown.append(f"🐋 **Centralized/Whale Heavy:** -10 pts")
             
-        if meta['staked'] >= 50: score += 10; breakdown.append(f"🔒 **Massive Staking Lockup ({meta['staked']}%):** +10 pts (Supply Shock)")
+        if meta['staked'] >= 50: score += 10; breakdown.append(f"🔒 **Massive Staking Lockup ({meta['staked']}%):** +10 pts (Supply Shock Risk)")
         elif meta['staked'] >= 20: score += 5; breakdown.append(f"🔒 **Healthy Staking Lockup ({meta['staked']}%):** +5 pts")
             
+        # CONTINUOUS MACRO UPSIDE SCALING
         if meta['target'] > 0:
             upside = ((meta['target'] - current_price) / current_price) * 100
-            if upside > 100: score += 10; breakdown.append(f"🎯 **Macro Upside (>100%):** +10 pts")
-            elif upside > 30: score += 5; breakdown.append(f"🎯 **Macro Upside (>30%):** +5 pts")
-            elif upside <= 0: score -= 10; breakdown.append(f"🚨 **Above Macro Target:** -10 pts")
+            if upside <= 0:
+                upside_pts = -15
+                breakdown.append(f"🚨 **Above Macro Target ({upside:+.1f}%):** -15 pts (Overvalued)")
+            elif upside <= 30:
+                upside_pts = -15 + (upside / 30.0) * 15 # Scales -15 to 0
+                breakdown.append(f"⚠️ **Near Macro Target ({upside:+.1f}%):** {upside_pts:+.1f} pts (Limited Upside)")
+            elif upside <= 200:
+                upside_pts = ((upside - 30) / 170.0) * 15 # Scales 0 to +15
+                breakdown.append(f"✅ **Healthy Upside ({upside:+.1f}%):** +{upside_pts:.1f} pts")
+            else:
+                upside_pts = 15
+                breakdown.append(f"🚀 **Massive Upside Potential ({upside:+.1f}%):** +15 pts")
+            score += upside_pts
 
-        # 1. Retail FOMO (Brutal Google Trends Penalty)
-        if google_fomo >= 80:
-            score -= 20; risk_points += 1
-            breakdown.append(f"🚨 **Extreme Retail FOMO (Search:{google_fomo}):** -20 pts (Blowout Top Warning)")
-        elif google_fomo <= 20:
-            score += 5
-            breakdown.append(f"🤫 **Silent Accumulation (Search:{google_fomo}):** +5 pts (No Retail Interest)")
+        # 1. Retail FOMO (Google Trends Penalty - Only runs if API wasn't blocked)
+        if google_fomo is not None:
+            if google_fomo >= 80:
+                score -= 20; risk_points += 1
+                breakdown.append(f"🚨 **Extreme Retail FOMO (Search:{google_fomo}):** -20 pts (Blowout Top Warning)")
+            elif google_fomo <= 20:
+                score += 5
+                breakdown.append(f"🤫 **Silent Accumulation (Search:{google_fomo}):** +5 pts (No Retail Interest)")
+            else:
+                breakdown.append(f"➖ **Retail Interest Neutral (Search:{google_fomo}):** 0 pts")
+        else:
+            breakdown.append(f"⚠️ **Retail FOMO:** [Google API Rate Limited/Blocked]")
 
-        # 2. Historical Drawdown (Rebalanced)
+        # 2. Historical Drawdown
         dd_abs = abs(drawdown)
         if tier <= 2:
             if dd_abs <= 15: dd_pts = -10; breakdown.append(f"❌ **Near ATH ({drawdown:.1f}%):** -10 pts (FOMO Zone)")
@@ -308,7 +341,7 @@ def get_crypto_data(port_dict, global_fng_val):
             if sma_50 > sma_200: score += 5; breakdown.append("✅ **Golden Cross:** +5 pts")
             else: score -= 10; breakdown.append("❌ **Death Cross:** -10 pts")
 
-        # 4. RSI Momentum (Punishing Overbought Conditions)
+        # 4. RSI Momentum 
         if isinstance(rsi_14, (float, int)):
             if rsi_14 < 30: rsi_pts = 10
             elif rsi_14 < 40: rsi_pts = 5
@@ -326,7 +359,7 @@ def get_crypto_data(port_dict, global_fng_val):
             if macd_val > sig_val: score += 5
             else: score -= 5
 
-        # 6. Global Sentiment Modifier (Harsh Euphoria Penalty)
+        # 6. Global Sentiment Modifier
         if global_fng_val > 75: fng_adj = -15; breakdown.append(f"❌ **Market Euphoria ({global_fng_val}):** -15 pts (Take Profits)")
         elif global_fng_val > 60: fng_adj = -5; breakdown.append(f"⚠️ **Market Greed ({global_fng_val}):** -5 pts")
         elif global_fng_val < 30: fng_adj = 10; breakdown.append(f"✅ **Market Capitulation ({global_fng_val}):** +10 pts (Contrarian Buy)")
@@ -497,8 +530,11 @@ def draw_crypto_row(coin, histories, today_date, is_watchlist=False, hide_dollar
             st.write(f"**Macro Target:** {tgt_str}")
         with subB:
             g_fomo = coin['Meta_Google']
-            g_color = "red" if g_fomo > 80 else ("green" if g_fomo < 30 else "gray")
-            st.markdown(f"**Retail FOMO:** :{g_color}[{g_fomo}/100]")
+            if g_fomo is not None:
+                g_color = "red" if g_fomo > 80 else ("green" if g_fomo < 30 else "gray")
+                st.markdown(f"**Retail FOMO:** :{g_color}[{g_fomo}/100]")
+            else:
+                st.markdown("**Retail FOMO:** :orange[API Rate Limited]")
             
     ticker = coin['Ticker']
     master_hist = histories.get(ticker)
