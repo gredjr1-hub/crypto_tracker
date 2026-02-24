@@ -30,10 +30,10 @@ YF_TICKER_MAP = {
     'SUI': 'SUI20947-USD', 'TAO': 'TAO22974-USD', 'PEPE': 'PEPE24478-USD', 'WIF': 'WIF28507-USD',
     'BONK': 'BONK23095-USD', 'TON': 'TON11419-USD', 'APT': 'APT21794-USD', 'OP': 'OP21594-USD',
     'UNI': 'UNI7083-USD', 'DOT': 'DOT-USD', 'NEAR': 'NEAR-USD', 'INJ': 'INJ-USD',
-    'FIL': 'FIL-USD', 'LDO': 'LDO-USD', 'AR': 'AR-USD', 'RNDR': 'RNDR-USD', 'FTM': 'FTM-USD', 
-    'HBAR': 'HBAR-USD', 'BCH': 'BCH-USD', 'XLM': 'XLM-USD', 'TRX': 'TRX-USD', 'LTC': 'LTC-USD',
+    'FIL': 'FIL-USD', 'LDO': 'LDO-USD', 'AR': 'AR-USD', 'HBAR': 'HBAR-USD', 
+    'BCH': 'BCH-USD', 'XLM': 'XLM-USD', 'TRX': 'TRX-USD', 'LTC': 'LTC-USD',
     # --- MIGRATED TICKERS ---
-    'MATIC': 'POL-USD',   # MATIC migrated to Polygon Ecosystem Token (POL)
+    'RNDR': 'RENDER-USD', # Render migrated to Solana (RENDER)
     'FTM': 'S-USD'        # Fantom migrated to Sonic (S)
 }
 
@@ -44,7 +44,7 @@ def get_yf_ticker(symbol):
 # --- PROJECT PROMISE & UTILITY TIERS ---
 CRYPTO_TIERS = {
     'BTC': 1, 'ETH': 1, 
-    'SOL': 2, 'ADA': 2, 'AVAX': 2, 'DOT': 2, 'LINK': 2, 'MATIC': 2, 'NEAR': 2, 'APT': 2, 'OP': 2, 'INJ': 2, 'XRP': 2, 'BNB': 2, 'TRX': 2, 'LTC': 2, 'SUI': 2, 'TAO': 2,
+    'SOL': 2, 'ADA': 2, 'AVAX': 2, 'DOT': 2, 'LINK': 2, 'NEAR': 2, 'APT': 2, 'OP': 2, 'INJ': 2, 'XRP': 2, 'BNB': 2, 'TRX': 2, 'LTC': 2, 'SUI': 2, 'TAO': 2,
     'FIL': 2, 'LDO': 2, 'AR': 2, 'RNDR': 2, 'FTM': 2, 'HBAR': 2, 'TON': 2, 'BCH': 2, 'UNI': 2, 'XLM': 2,
     'DOGE': 3, 'SHIB': 3, 'PEPE': 3, 'FLOKI': 3, 'BONK': 3, 'WIF': 3 
 }
@@ -64,7 +64,6 @@ CRYPTO_META = {
     'DOGE': {'desc': "The original PoW meme cryptocurrency.", 'utility': 30, 'decentralization': 75, 'staked': 0, 'target': 1.00, 'trend_term': "Dogecoin"},
     'SHIB': {'desc': "ERC-20 meme token with building DeFi ecosystem.", 'utility': 35, 'decentralization': 60, 'staked': 2, 'target': 0.00008, 'trend_term': "Shiba Inu Coin"},
     'DOT': {'desc': "Interoperability network connecting bespoke parachains.", 'utility': 80, 'decentralization': 75, 'staked': 52, 'target': 25, 'trend_term': "Polkadot Crypto"},
-    'MATIC': {'desc': "Ethereum's premier L2 scaling solution (Polygon).", 'utility': 85, 'decentralization': 60, 'staked': 35, 'target': 2.00, 'trend_term': "Polygon Crypto"},
     'NEAR': {'desc': "Highly scalable, sharded Proof-of-Stake L1.", 'utility': 80, 'decentralization': 65, 'staked': 45, 'target': 15, 'trend_term': "Near Protocol"},
     'APT': {'desc': "High-performance L1 spun out of Facebook's Diem project.", 'utility': 80, 'decentralization': 40, 'staked': 80, 'target': 30, 'trend_term': "Aptos Crypto"},
     'OP': {'desc': "Optimistic rollup L2 scaling network for Ethereum.", 'utility': 85, 'decentralization': 50, 'staked': 20, 'target': 8, 'trend_term': "Optimism Crypto"},
@@ -96,7 +95,8 @@ def load_score_history():
             skey = dict(st.secrets["gcp_service_account"])
             credentials = Credentials.from_service_account_info(skey, scopes=scopes)
             gc = gspread.authorize(credentials)
-            sheet = gc.open("Crypto_Quant_History").sheet1
+            # FIXED GOOGLE SHEET NAME TARGET
+            sheet = gc.open("Crypto_Quant_Tracker").sheet1
             data = sheet.get_all_records()
             if data:
                 df = pd.DataFrame(data)
@@ -181,7 +181,8 @@ def log_scores(portfolio_data):
             credentials = Credentials.from_service_account_info(skey, scopes=scopes)
             gc = gspread.authorize(credentials)
             
-            sheet = gc.open("Crypto_Quant_History").sheet1
+            # FIXED GOOGLE SHEET NAME TARGET
+            sheet = gc.open("Crypto_Quant_Tracker").sheet1
             existing_data = sheet.get_all_records()
             existing_records = set((str(row.get('Date', '')), str(row.get('Ticker', ''))) for row in existing_data)
             
@@ -276,16 +277,14 @@ def get_crypto_data(port_dict, global_fng_val):
         hist = pd.DataFrame()
         
         # --- ANTI-CRASH RETRY LOGIC ---
-        # Gracefully handle Yahoo Rate Limits without crashing the app
         for attempt in range(3):
             try:
                 hist = coin.history(period='max')
                 if not hist.empty:
                     break
             except Exception:
-                time.sleep(2) # Pause and backoff if Yahoo throws an error
+                time.sleep(2) 
                 
-        # --- KEEP SPEED BUMPER ---
         time.sleep(0.5)
         
         if hist.empty: continue
@@ -727,9 +726,10 @@ if st.session_state.watchlist:
 st.markdown("### 🏆 Top Market Scanner")
 st.markdown("Live technical scan of the top layer-1s, layer-2s, and blue-chip tokens.")
 
+# Removed MATIC and ATOM from global scanner to keep universe clean
 global_universe = [
     'BTC', 'ETH', 'BNB', 'SOL', 'XRP', 'ADA', 'AVAX', 'DOGE', 'DOT',
-    'TRX', 'LINK', 'MATIC', 'TON', 'SHIB', 'LTC', 'BCH', 'UNI', 'NEAR', 'ATOM',
+    'TRX', 'LINK', 'TON', 'SHIB', 'LTC', 'BCH', 'UNI', 'NEAR',
     'XLM', 'APT', 'OP', 'INJ', 'FIL', 'LDO', 'AR', 'RNDR', 'FTM', 'HBAR', 'PEPE', 'SUI', 'TAO'
 ]
 
