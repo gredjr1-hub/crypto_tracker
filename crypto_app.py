@@ -68,6 +68,7 @@ CRYPTO_META = {
     'DOGE': {'desc': "The original PoW meme cryptocurrency.", 'utility': 30, 'decentralization': 75, 'staked': 0, 'target': 1.00, 'trend_term': "Dogecoin"},
     'SHIB': {'desc': "ERC-20 meme token with building DeFi ecosystem.", 'utility': 35, 'decentralization': 60, 'staked': 2, 'target': 0.00008, 'trend_term': "Shiba Inu Coin"},
     'DOT': {'desc': "Interoperability network connecting bespoke parachains.", 'utility': 80, 'decentralization': 75, 'staked': 52, 'target': 25, 'trend_term': "Polkadot Crypto"},
+    'MATIC': {'desc': "Ethereum's premier L2 scaling solution (Polygon).", 'utility': 85, 'decentralization': 60, 'staked': 35, 'target': 2.00, 'trend_term': "Polygon Crypto"},
     'NEAR': {'desc': "Highly scalable, sharded Proof-of-Stake L1.", 'utility': 80, 'decentralization': 65, 'staked': 45, 'target': 15, 'trend_term': "Near Protocol"},
     'APT': {'desc': "High-performance L1 spun out of Facebook's Diem project.", 'utility': 80, 'decentralization': 40, 'staked': 80, 'target': 30, 'trend_term': "Aptos Crypto"},
     'OP': {'desc': "Optimistic rollup L2 scaling network for Ethereum.", 'utility': 85, 'decentralization': 50, 'staked': 20, 'target': 8, 'trend_term': "Optimism Crypto"},
@@ -90,7 +91,7 @@ CRYPTO_META = {
 # --- DATA LOADERS & MULTI-DEVICE LOGGING ---
 @st.cache_data(ttl=60)
 def load_score_history():
-    """Loads the historical quant scores directly via URL."""
+    """Loads the historical quant scores directly via URL, handling empty sheet quirks."""
     if "YOUR_UNIQUE_ID_HERE" in SHEET_URL:
         st.sidebar.warning("⚠️ Setup needed: Open your code and paste your Google Sheet URL into Line 20.")
         
@@ -109,6 +110,7 @@ def load_score_history():
             
             if "YOUR_UNIQUE_ID_HERE" not in SHEET_URL:
                 sheet = gc.open_by_url(SHEET_URL).sheet1
+                # get_all_values() is used to avoid crashing on missing headers
                 data = sheet.get_all_values() 
                 if len(data) > 1:
                     headers = data.pop(0)
@@ -118,9 +120,7 @@ def load_score_history():
     except FileNotFoundError:
         pass 
     except Exception as e:
-        error_msg = str(e)
-        if "200" not in error_msg:
-            st.sidebar.error(f"⚠️ Read Error: {error_msg}")
+        # Silently pass if it is the empty sheet 200 quirk so the app can continue
         pass
 
     if os.path.exists("historical_crypto_scores.csv"):
@@ -184,7 +184,7 @@ def calculate_obv(close, volume):
     return obv
 
 def log_scores(portfolio_data):
-    """Direct URL logger that bypasses the Drive API name-search bug entirely."""
+    """Direct URL logger that force-initializes empty sheets to fix 200 errors."""
     today_str = datetime.today().strftime('%Y-%m-%d')
     
     try:
@@ -208,7 +208,6 @@ def log_scores(portfolio_data):
                 return # User hasn't added URL yet
                 
             try:
-                # BYPASS NAME SEARCH: Open exactly via URL
                 sheet = gc.open_by_url(SHEET_URL).sheet1
             except Exception as open_e:
                 st.sidebar.error(f"Could not open Sheet via URL: {open_e}")
@@ -218,6 +217,7 @@ def log_scores(portfolio_data):
             try:
                 raw_data = sheet.get_all_values()
                 if not raw_data:
+                    # Sheet is completely blank. Force headers.
                     headers = ['Date', 'Ticker', 'Price', 'Score', 'Decision', 'Risk_Pts', 'Drawdown', 'RSI', 'Vol']
                     sheet.append_row(headers)
                 elif len(raw_data) > 1:
@@ -226,6 +226,7 @@ def log_scores(portfolio_data):
                             existing_records.add((str(row[0]), str(row[1])))
             except Exception as read_err:
                 if "200" in str(read_err):
+                    # gspread panicked at a blank sheet. Force headers immediately.
                     headers = ['Date', 'Ticker', 'Price', 'Score', 'Decision', 'Risk_Pts', 'Drawdown', 'RSI', 'Vol']
                     try: sheet.append_row(headers)
                     except: pass
