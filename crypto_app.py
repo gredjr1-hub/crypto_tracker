@@ -63,6 +63,7 @@ CRYPTO_META = {
     'DOGE': {'desc': "The original PoW meme cryptocurrency.", 'utility': 30, 'decentralization': 75, 'staked': 0, 'target': 1.00, 'trend_term': "Dogecoin"},
     'SHIB': {'desc': "ERC-20 meme token with building DeFi ecosystem.", 'utility': 35, 'decentralization': 60, 'staked': 2, 'target': 0.00008, 'trend_term': "Shiba Inu Coin"},
     'DOT': {'desc': "Interoperability network connecting bespoke parachains.", 'utility': 80, 'decentralization': 75, 'staked': 52, 'target': 25, 'trend_term': "Polkadot Crypto"},
+    'MATIC': {'desc': "Ethereum's premier L2 scaling solution (Polygon).", 'utility': 85, 'decentralization': 60, 'staked': 35, 'target': 2.00, 'trend_term': "Polygon Crypto"},
     'NEAR': {'desc': "Highly scalable, sharded Proof-of-Stake L1.", 'utility': 80, 'decentralization': 65, 'staked': 45, 'target': 15, 'trend_term': "Near Protocol"},
     'APT': {'desc': "High-performance L1 spun out of Facebook's Diem project.", 'utility': 80, 'decentralization': 40, 'staked': 80, 'target': 30, 'trend_term': "Aptos Crypto"},
     'OP': {'desc': "Optimistic rollup L2 scaling network for Ethereum.", 'utility': 85, 'decentralization': 50, 'staked': 20, 'target': 8, 'trend_term': "Optimism Crypto"},
@@ -85,7 +86,7 @@ CRYPTO_META = {
 # --- DATA LOADERS & MULTI-DEVICE LOGGING ---
 @st.cache_data(ttl=60)
 def load_score_history():
-    """Loads the historical quant scores from Google Sheets, with verbose error tracking."""
+    """Loads the historical quant scores from Google Sheets, masking the empty 200 quirk."""
     try:
         if hasattr(st, "secrets") and "gcp_service_account" in st.secrets:
             import gspread
@@ -101,7 +102,6 @@ def load_score_history():
             
             sheet = gc.open("Crypto_Quant_Tracker").sheet1
             
-            # Use get_all_values instead of get_all_records to bypass empty header crashes
             data = sheet.get_all_values() 
             if len(data) > 1:
                 headers = data.pop(0)
@@ -111,7 +111,9 @@ def load_score_history():
     except FileNotFoundError:
         pass 
     except Exception as e:
-        st.sidebar.error(f"⚠️ Read Error: {str(e)}")
+        # Ignore the empty sheet 200 response quirk
+        if "200" not in str(e):
+            st.sidebar.error(f"⚠️ Read Error: {str(e)}")
         pass
 
     if os.path.exists("historical_crypto_scores.csv"):
@@ -175,7 +177,7 @@ def calculate_obv(close, volume):
     return obv
 
 def log_scores(portfolio_data):
-    """Deep logging function with built-in empty sheet protection."""
+    """Deep logging function with forced empty-sheet initialization."""
     today_str = datetime.today().strftime('%Y-%m-%d')
     
     try:
@@ -201,20 +203,28 @@ def log_scores(portfolio_data):
                 st.sidebar.error(f"Could not open 'Crypto_Quant_Tracker': {open_e}")
                 return
             
-            # Fix the Response [200] issue by forcing headers if the sheet is blank
             existing_records = set()
             try:
                 raw_data = sheet.get_all_values()
-                if not raw_data: # If completely empty, inject headers
+                if not raw_data:
+                    # Sheet is perfectly blank but readable. Inject headers!
                     headers = ['Date', 'Ticker', 'Price', 'Score', 'Decision', 'Risk_Pts', 'Drawdown', 'RSI', 'Vol']
                     sheet.append_row(headers)
-                elif len(raw_data) > 1: # If it has data, extract the history
-                    for row in raw_data[1:]: # Skip header
+                elif len(raw_data) > 1:
+                    for row in raw_data[1:]:
                         if len(row) > 1:
                             existing_records.add((str(row[0]), str(row[1])))
             except Exception as read_err:
-                st.sidebar.error(f"Failed to read sheet data: {read_err}")
-                return
+                if "200" in str(read_err):
+                    # Sheet is so blank that gspread panicked with a 200 response. Force inject headers!
+                    headers = ['Date', 'Ticker', 'Price', 'Score', 'Decision', 'Risk_Pts', 'Drawdown', 'RSI', 'Vol']
+                    try:
+                        sheet.append_row(headers)
+                    except Exception:
+                        pass # Ignore secondary fails and keep moving
+                else:
+                    st.sidebar.error(f"Failed to read sheet data: {read_err}")
+                    return
             
             new_rows = []
             for coin in portfolio_data:
