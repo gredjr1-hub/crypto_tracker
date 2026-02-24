@@ -15,6 +15,11 @@ try:
 except ImportError:
     pass
 
+# =====================================================================
+# 🛑 ACTION REQUIRED: PASTE YOUR GOOGLE SHEET URL BELOW 🛑
+# =====================================================================
+SHEET_URL = "https://docs.google.com/spreadsheets/d/1f9wjI5kMQE5ut18KB2BZ1T3LdJt1kBUMGcv20FaeLtQ/edit"
+
 # --- SESSION STATE INITIALIZATION ---
 if 'startup_sound_played' not in st.session_state:
     st.session_state.startup_sound_played = False
@@ -85,7 +90,10 @@ CRYPTO_META = {
 # --- DATA LOADERS & MULTI-DEVICE LOGGING ---
 @st.cache_data(ttl=60)
 def load_score_history():
-    """Resilient history loader that ignores common blank sheet metadata errors."""
+    """Loads the historical quant scores directly via URL."""
+    if "YOUR_UNIQUE_ID_HERE" in SHEET_URL:
+        st.sidebar.warning("⚠️ Setup needed: Open your code and paste your Google Sheet URL into Line 20.")
+        
     try:
         if hasattr(st, "secrets") and "gcp_service_account" in st.secrets:
             import gspread
@@ -99,20 +107,22 @@ def load_score_history():
             credentials = Credentials.from_service_account_info(skey, scopes=scopes)
             gc = gspread.authorize(credentials)
             
-            sheet = gc.open("Crypto_Quant_Tracker").sheet1
-            
-            # Using get_all_values is more robust than get_all_records for initialization
-            data = sheet.get_all_values() 
-            if len(data) > 1: # Header exists + at least one row of data
-                headers = data.pop(0)
-                df = pd.DataFrame(data, columns=headers)
-                df['Date'] = pd.to_datetime(df['Date']).dt.tz_localize(None)
-                return df
+            if "YOUR_UNIQUE_ID_HERE" not in SHEET_URL:
+                sheet = gc.open_by_url(SHEET_URL).sheet1
+                data = sheet.get_all_values() 
+                if len(data) > 1:
+                    headers = data.pop(0)
+                    df = pd.DataFrame(data, columns=headers)
+                    df['Date'] = pd.to_datetime(df['Date']).dt.tz_localize(None)
+                    return df
+    except FileNotFoundError:
+        pass 
     except Exception as e:
-        # Silently fail for empty sheets to allow normal app flow
+        error_msg = str(e)
+        if "200" not in error_msg:
+            st.sidebar.error(f"⚠️ Read Error: {error_msg}")
         pass
 
-    # Fallback to local CSV if Sheets fails
     if os.path.exists("historical_crypto_scores.csv"):
         try:
             df = pd.read_csv("historical_crypto_scores.csv")
@@ -174,7 +184,7 @@ def calculate_obv(close, volume):
     return obv
 
 def log_scores(portfolio_data):
-    """Robust logger that initializes blank sheets and avoids Response 200 crashes."""
+    """Direct URL logger that bypasses the Drive API name-search bug entirely."""
     today_str = datetime.today().strftime('%Y-%m-%d')
     
     try:
@@ -187,28 +197,41 @@ def log_scores(portfolio_data):
             if "private_key" in skey:
                 skey["private_key"] = skey["private_key"].replace("\\n", "\n")
                 
-            credentials = Credentials.from_service_account_info(skey, scopes=scopes)
-            gc = gspread.authorize(credentials)
+            try:
+                credentials = Credentials.from_service_account_info(skey, scopes=scopes)
+                gc = gspread.authorize(credentials)
+            except Exception as auth_e:
+                st.sidebar.error(f"Google Auth Failed: {auth_e}")
+                return
             
-            sheet = gc.open("Crypto_Quant_Tracker").sheet1
+            if "YOUR_UNIQUE_ID_HERE" in SHEET_URL:
+                return # User hasn't added URL yet
+                
+            try:
+                # BYPASS NAME SEARCH: Open exactly via URL
+                sheet = gc.open_by_url(SHEET_URL).sheet1
+            except Exception as open_e:
+                st.sidebar.error(f"Could not open Sheet via URL: {open_e}")
+                return
             
             existing_records = set()
             try:
-                # Use values to avoid record parsing errors on empty sheets
                 raw_data = sheet.get_all_values()
-                if not raw_data: # Sheet is completely blank
+                if not raw_data:
                     headers = ['Date', 'Ticker', 'Price', 'Score', 'Decision', 'Risk_Pts', 'Drawdown', 'RSI', 'Vol']
                     sheet.append_row(headers)
                 elif len(raw_data) > 1:
-                    for row in raw_data[1:]: # Skip header
+                    for row in raw_data[1:]:
                         if len(row) > 1:
                             existing_records.add((str(row[0]), str(row[1])))
             except Exception as read_err:
-                # If sheet panics with 200 response, assume blank and force headers
                 if "200" in str(read_err):
                     headers = ['Date', 'Ticker', 'Price', 'Score', 'Decision', 'Risk_Pts', 'Drawdown', 'RSI', 'Vol']
                     try: sheet.append_row(headers)
                     except: pass
+                else:
+                    st.sidebar.error(f"Failed to read sheet data: {read_err}")
+                    return
             
             new_rows = []
             for coin in portfolio_data:
@@ -221,14 +244,20 @@ def log_scores(portfolio_data):
                     ])
                     
             if new_rows:
-                sheet.append_rows(new_rows)
-                st.toast(f"✅ Logged {len(new_rows)} rows to Cloud History")
+                try:
+                    sheet.append_rows(new_rows)
+                    st.toast(f"✅ Successfully backed up {len(new_rows)} records to Google Sheets!")
+                except Exception as write_err:
+                    st.sidebar.error(f"Failed writing rows to sheet: {write_err}")
             return
+    except FileNotFoundError:
+        pass 
     except Exception as e:
-        # Fallback to local logging if Cloud fails
+        error_msg = str(e)
+        if "200" not in error_msg:
+            st.sidebar.error(f"⚠️ General Sheets Error: {error_msg}")
         pass
         
-    # Local CSV Fallback logic remains identical
     filename = "historical_crypto_scores.csv"
     file_exists = os.path.isfile(filename)
     existing_records = set()
