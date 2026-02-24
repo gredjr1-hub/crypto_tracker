@@ -6,4 +6,4 @@ plotly
 requests
 pytrends
 gspread
-
+curl_cffi
