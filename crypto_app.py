@@ -547,6 +547,7 @@ def draw_crypto_row(coin, histories, today_date, is_watchlist=False, hide_dollar
             if not t_scores.empty:
                 t_scores.set_index('Date', inplace=True)
                 t_scores = t_scores[~t_scores.index.duplicated(keep='last')]
+                # Merge the Quant Score properly so it plots
                 master_hist = master_hist.join(t_scores['Score'], how='left')
                 master_hist['Score'] = master_hist['Score'].ffill()
                 
@@ -556,8 +557,9 @@ def draw_crypto_row(coin, histories, today_date, is_watchlist=False, hide_dollar
         with cols[2]:
             fig = go.Figure()
             
+            # --- Ensure the Quant Score Line actually renders ---
             if 'Score' in master_hist.columns and not master_hist['Score'].dropna().empty:
-                fig.add_trace(go.Scatter(x=master_hist.index, y=master_hist['Score'], mode='lines', name='Crypto Score', line=dict(color='rgba(255, 0, 255, 0.4)', width=2, dash='dot'), yaxis='y2'))
+                fig.add_trace(go.Scatter(x=master_hist.index, y=master_hist['Score'], mode='lines', name='Quant Score', line=dict(color='rgba(255, 0, 255, 0.4)', width=2, dash='dot'), yaxis='y2'))
 
             if 'BB_Upper' in master_hist.columns and not master_hist['BB_Upper'].dropna().empty:
                 fig.add_trace(go.Scatter(x=master_hist.index, y=master_hist['BB_Upper'], mode='lines', line=dict(width=0), showlegend=False, hoverinfo='skip'))
