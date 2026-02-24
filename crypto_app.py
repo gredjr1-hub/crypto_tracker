@@ -64,6 +64,7 @@ CRYPTO_META = {
     'DOGE': {'desc': "The original PoW meme cryptocurrency.", 'utility': 30, 'decentralization': 75, 'staked': 0, 'target': 1.00, 'trend_term': "Dogecoin"},
     'SHIB': {'desc': "ERC-20 meme token with building DeFi ecosystem.", 'utility': 35, 'decentralization': 60, 'staked': 2, 'target': 0.00008, 'trend_term': "Shiba Inu Coin"},
     'DOT': {'desc': "Interoperability network connecting bespoke parachains.", 'utility': 80, 'decentralization': 75, 'staked': 52, 'target': 25, 'trend_term': "Polkadot Crypto"},
+    'MATIC': {'desc': "Ethereum's premier L2 scaling solution (Polygon).", 'utility': 85, 'decentralization': 60, 'staked': 35, 'target': 2.00, 'trend_term': "Polygon Crypto"},
     'NEAR': {'desc': "Highly scalable, sharded Proof-of-Stake L1.", 'utility': 80, 'decentralization': 65, 'staked': 45, 'target': 15, 'trend_term': "Near Protocol"},
     'APT': {'desc': "High-performance L1 spun out of Facebook's Diem project.", 'utility': 80, 'decentralization': 40, 'staked': 80, 'target': 30, 'trend_term': "Aptos Crypto"},
     'OP': {'desc': "Optimistic rollup L2 scaling network for Ethereum.", 'utility': 85, 'decentralization': 50, 'staked': 20, 'target': 8, 'trend_term': "Optimism Crypto"},
@@ -93,9 +94,14 @@ def load_score_history():
             from google.oauth2.service_account import Credentials
             scopes = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
             skey = dict(st.secrets["gcp_service_account"])
+            
+            # CRITICAL FIX: Ensure newlines in the private key are parsed correctly by Python
+            if "private_key" in skey:
+                skey["private_key"] = skey["private_key"].replace("\\n", "\n")
+                
             credentials = Credentials.from_service_account_info(skey, scopes=scopes)
             gc = gspread.authorize(credentials)
-            # FIXED GOOGLE SHEET NAME TARGET
+            
             sheet = gc.open("Crypto_Quant_Tracker").sheet1
             data = sheet.get_all_records()
             if data:
@@ -105,7 +111,8 @@ def load_score_history():
     except FileNotFoundError:
         pass 
     except Exception as e:
-        print(f"Google Sheets Load Error: {e}")
+        # PUSH ERROR TO UI SO YOU CAN DEBUG IT
+        st.sidebar.error(f"Failed to Load Sheets History: {str(e)}")
         pass
 
     if os.path.exists("historical_crypto_scores.csv"):
@@ -178,10 +185,14 @@ def log_scores(portfolio_data):
             from google.oauth2.service_account import Credentials
             scopes = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
             skey = dict(st.secrets["gcp_service_account"])
+            
+            # CRITICAL FIX: Clean private key newlines
+            if "private_key" in skey:
+                skey["private_key"] = skey["private_key"].replace("\\n", "\n")
+                
             credentials = Credentials.from_service_account_info(skey, scopes=scopes)
             gc = gspread.authorize(credentials)
             
-            # FIXED GOOGLE SHEET NAME TARGET
             sheet = gc.open("Crypto_Quant_Tracker").sheet1
             existing_data = sheet.get_all_records()
             existing_records = set((str(row.get('Date', '')), str(row.get('Ticker', ''))) for row in existing_data)
@@ -198,12 +209,13 @@ def log_scores(portfolio_data):
                     
             if new_rows:
                 sheet.append_rows(new_rows)
-                print(f"✅ Successfully logged {len(new_rows)} rows to Google Sheets.")
+                st.toast(f"✅ Successfully logged {len(new_rows)} fresh records to Google Sheets!")
             return
     except FileNotFoundError:
         pass 
     except Exception as e:
-        print(f"⚠️ Google Sheets Log Error: {e}")
+        # PUSH ERROR TO UI SO YOU CAN DEBUG IT
+        st.sidebar.error(f"Failed to log to Google Sheets: {str(e)}")
         pass
         
     filename = "historical_crypto_scores.csv"
@@ -276,7 +288,6 @@ def get_crypto_data(port_dict, global_fng_val):
         coin = yf.Ticker(yf_ticker)
         hist = pd.DataFrame()
         
-        # --- ANTI-CRASH RETRY LOGIC ---
         for attempt in range(3):
             try:
                 hist = coin.history(period='max')
@@ -726,7 +737,6 @@ if st.session_state.watchlist:
 st.markdown("### 🏆 Top Market Scanner")
 st.markdown("Live technical scan of the top layer-1s, layer-2s, and blue-chip tokens.")
 
-# Removed MATIC and ATOM from global scanner to keep universe clean
 global_universe = [
     'BTC', 'ETH', 'BNB', 'SOL', 'XRP', 'ADA', 'AVAX', 'DOGE', 'DOT',
     'TRX', 'LINK', 'TON', 'SHIB', 'LTC', 'BCH', 'UNI', 'NEAR',
