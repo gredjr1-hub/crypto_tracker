@@ -32,9 +32,8 @@ YF_TICKER_MAP = {
     'UNI': 'UNI7083-USD', 'DOT': 'DOT-USD', 'NEAR': 'NEAR-USD', 'INJ': 'INJ-USD',
     'FIL': 'FIL-USD', 'LDO': 'LDO-USD', 'AR': 'AR-USD', 'HBAR': 'HBAR-USD', 
     'BCH': 'BCH-USD', 'XLM': 'XLM-USD', 'TRX': 'TRX-USD', 'LTC': 'LTC-USD',
-    # --- MIGRATED TICKERS ---
-    'RNDR': 'RENDER-USD', # Render migrated to Solana (RENDER)
-    'FTM': 'S-USD'        # Fantom migrated to Sonic (S)
+    'RNDR': 'RENDER-USD', 
+    'FTM': 'S-USD'        
 }
 
 def get_yf_ticker(symbol):
@@ -95,7 +94,6 @@ def load_score_history():
             scopes = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
             skey = dict(st.secrets["gcp_service_account"])
             
-            # CRITICAL FIX: Ensure newlines in the private key are parsed correctly by Python
             if "private_key" in skey:
                 skey["private_key"] = skey["private_key"].replace("\\n", "\n")
                 
@@ -111,8 +109,9 @@ def load_score_history():
     except FileNotFoundError:
         pass 
     except Exception as e:
-        # PUSH ERROR TO UI SO YOU CAN DEBUG IT
-        st.sidebar.error(f"Failed to Load Sheets History: {str(e)}")
+        # Ignore the empty sheet 200 response
+        if "200" not in str(e):
+            st.sidebar.error(f"Failed to Load Sheets History: {str(e)}")
         pass
 
     if os.path.exists("historical_crypto_scores.csv"):
@@ -186,7 +185,6 @@ def log_scores(portfolio_data):
             scopes = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
             skey = dict(st.secrets["gcp_service_account"])
             
-            # CRITICAL FIX: Clean private key newlines
             if "private_key" in skey:
                 skey["private_key"] = skey["private_key"].replace("\\n", "\n")
                 
@@ -194,8 +192,13 @@ def log_scores(portfolio_data):
             gc = gspread.authorize(credentials)
             
             sheet = gc.open("Crypto_Quant_Tracker").sheet1
-            existing_data = sheet.get_all_records()
-            existing_records = set((str(row.get('Date', '')), str(row.get('Ticker', ''))) for row in existing_data)
+            
+            try:
+                existing_data = sheet.get_all_records()
+                existing_records = set((str(row.get('Date', '')), str(row.get('Ticker', ''))) for row in existing_data)
+            except Exception as read_err:
+                # If sheet is empty, get_all_records fails. Just assume empty.
+                existing_records = set()
             
             new_rows = []
             for coin in portfolio_data:
@@ -214,8 +217,8 @@ def log_scores(portfolio_data):
     except FileNotFoundError:
         pass 
     except Exception as e:
-        # PUSH ERROR TO UI SO YOU CAN DEBUG IT
-        st.sidebar.error(f"Failed to log to Google Sheets: {str(e)}")
+        if "200" not in str(e):
+            st.sidebar.error(f"Failed to log to Google Sheets: {str(e)}")
         pass
         
     filename = "historical_crypto_scores.csv"
