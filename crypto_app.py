@@ -88,7 +88,7 @@ CRYPTO_META = {
 def load_score_history():
     """Loads the historical quant scores, preferring Google Sheets and falling back to CSV."""
     try:
-        if "gcp_service_account" in st.secrets:
+        if hasattr(st, "secrets") and "gcp_service_account" in st.secrets:
             import gspread
             from google.oauth2.service_account import Credentials
             scopes = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
@@ -101,7 +101,10 @@ def load_score_history():
                 df = pd.DataFrame(data)
                 df['Date'] = pd.to_datetime(df['Date']).dt.tz_localize(None)
                 return df
-    except Exception:
+    except FileNotFoundError:
+        pass # Ignored if testing locally without secrets
+    except Exception as e:
+        print(f"Google Sheets Load Error: {e}")
         pass
 
     if os.path.exists("historical_crypto_scores.csv"):
@@ -169,7 +172,7 @@ def log_scores(portfolio_data):
     today_str = datetime.today().strftime('%Y-%m-%d')
     
     try:
-        if "gcp_service_account" in st.secrets:
+        if hasattr(st, "secrets") and "gcp_service_account" in st.secrets:
             import gspread
             from google.oauth2.service_account import Credentials
             scopes = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
@@ -193,8 +196,12 @@ def log_scores(portfolio_data):
                     
             if new_rows:
                 sheet.append_rows(new_rows)
+                print(f"✅ Successfully logged {len(new_rows)} rows to Google Sheets.")
             return
-    except Exception:
+    except FileNotFoundError:
+        pass # Ignored if testing locally without secrets
+    except Exception as e:
+        print(f"⚠️ Google Sheets Log Error: {e}")
         pass
         
     filename = "historical_crypto_scores.csv"
@@ -585,12 +592,21 @@ def draw_crypto_row(coin, histories, today_date, is_watchlist=False, hide_dollar
     master_hist = histories.get(ticker)
     
     if master_hist is not None and not master_hist.empty:
+        
+        # --- FIX #3: Crop dataframe to 2 years to fix massive chart white space ---
+        master_hist = master_hist.tail(730).copy()
+
+        # --- FIX #1: Date normalization for Score Merging ---
         if score_history is not None and not score_history.empty:
             t_scores = score_history[score_history['Ticker'] == ticker].copy()
             if not t_scores.empty:
+                t_scores['Date'] = pd.to_datetime(t_scores['Date']).dt.normalize()
                 t_scores.set_index('Date', inplace=True)
                 t_scores = t_scores[~t_scores.index.duplicated(keep='last')]
-                master_hist = master_hist.join(t_scores['Score'], how='left')
+                
+                master_hist['temp_date'] = master_hist.index.normalize()
+                master_hist = master_hist.reset_index().merge(t_scores[['Score']], left_on='temp_date', right_index=True, how='left').set_index('Date')
+                master_hist.drop(columns=['temp_date'], inplace=True)
                 master_hist['Score'] = master_hist['Score'].ffill()
                 
         if len(master_hist) > 20:
@@ -599,9 +615,9 @@ def draw_crypto_row(coin, histories, today_date, is_watchlist=False, hide_dollar
         with cols[2]:
             fig = go.Figure()
             
-            # --- Ensures the Quant Score Line actually renders ---
+            # --- Draw the Quant Score Line ---
             if 'Score' in master_hist.columns and not master_hist['Score'].dropna().empty:
-                fig.add_trace(go.Scatter(x=master_hist.index, y=master_hist['Score'], mode='lines', name='Quant Score', line=dict(color='rgba(255, 0, 255, 0.4)', width=2, dash='dot'), yaxis='y2'))
+                fig.add_trace(go.Scatter(x=master_hist.index, y=master_hist['Score'], mode='lines', name='Quant Score', line=dict(color='rgba(255, 0, 255, 0.7)', width=2.5, dash='dot'), yaxis='y2'))
 
             if 'BB_Upper' in master_hist.columns and not master_hist['BB_Upper'].dropna().empty:
                 fig.add_trace(go.Scatter(x=master_hist.index, y=master_hist['BB_Upper'], mode='lines', line=dict(width=0), showlegend=False, hoverinfo='skip'))
@@ -635,8 +651,9 @@ def draw_crypto_row(coin, histories, today_date, is_watchlist=False, hide_dollar
                     ),
                     type="date"
                 ),
-                yaxis=dict(visible=True, side='left'), 
-                yaxis2=dict(range=[0, 100], overlaying='y', side='right', visible=False), 
+                yaxis=dict(visible=True, side='left', autorange=True), 
+                # --- Enabled yaxis2 so the 0-100 scale is visible for the Score ---
+                yaxis2=dict(range=[0, 100], overlaying='y', side='right', visible=True, title="Quant Score", showgrid=False, tickfont=dict(color='fuchsia')), 
                 showlegend=False, 
                 height=350, 
                 plot_bgcolor='rgba(0,0,0,0)', 
