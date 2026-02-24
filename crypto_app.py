@@ -97,24 +97,30 @@ def load_score_history():
                 "https://www.googleapis.com/auth/drive"
             ]
             skey = dict(st.secrets["gcp_service_account"])
+            if "private_key" in skey:
+                skey["private_key"] = skey["private_key"].replace("\\n", "\n")
+                
             credentials = Credentials.from_service_account_info(skey, scopes=scopes)
             gc = gspread.authorize(credentials)
             
-            # Pull from Google Sheet
             sheet = gc.open("Crypto_Quant_Tracker").sheet1
-            data = sheet.get_all_records()
-            if data:
-                df = pd.DataFrame(data)
-                df['Date'] = pd.to_datetime(df['Date']).dt.tz_localize(None)
+            # FIX: Use get_all_values() and manually construct DataFrame to avoid 'Date' KeyError
+            raw_data = sheet.get_all_values()
+            if len(raw_data) > 1:
+                headers = raw_data[0]
+                df = pd.DataFrame(raw_data[1:], columns=headers)
+                if 'Date' in df.columns:
+                    df['Date'] = pd.to_datetime(df['Date'], errors='coerce').dt.tz_localize(None)
                 return df
     except Exception as e:
-        st.sidebar.error(f"Sheet Load Error: {e}")
-        pass # Fail silently and fallback to local CSV
+        print(f"Google Sheet Load Error: {e}")
+        pass 
 
     if os.path.exists("historical_crypto_scores.csv"):
         try:
             df = pd.read_csv("historical_crypto_scores.csv")
-            df['Date'] = pd.to_datetime(df['Date']).dt.tz_localize(None)
+            if 'Date' in df.columns:
+                df['Date'] = pd.to_datetime(df['Date'], errors='coerce').dt.tz_localize(None)
             return df
         except Exception: pass
         
@@ -173,10 +179,9 @@ def calculate_obv(close, volume):
     return obv
 
 def log_scores(portfolio_data):
-    """Logs scores to Google Sheets if configured, otherwise safely falls back to local CSV."""
+    """Logs scores to Google Sheets. Does not use UI elements to prevent CacheReplayClosureError."""
     today_str = datetime.today().strftime('%Y-%m-%d')
     
-    # 1. Try Google Sheets First
     try:
         if "gcp_service_account" in st.secrets:
             import gspread
@@ -187,12 +192,34 @@ def log_scores(portfolio_data):
                 "https://www.googleapis.com/auth/drive"
             ]
             skey = dict(st.secrets["gcp_service_account"])
+            if "private_key" in skey:
+                skey["private_key"] = skey["private_key"].replace("\\n", "\n")
+                
             credentials = Credentials.from_service_account_info(skey, scopes=scopes)
             gc = gspread.authorize(credentials)
             
             sheet = gc.open("Crypto_Quant_Tracker").sheet1
-            existing_data = sheet.get_all_records()
-            existing_records = set((str(row.get('Date', '')), str(row.get('Ticker', ''))) for row in existing_data)
+            
+            # Use get_all_values() to prevent metadata crashing on empty sheets
+            try:
+                raw_data = sheet.get_all_values()
+                if not raw_data:
+                    headers = ['Date', 'Ticker', 'Price', 'Score', 'Decision', 'Risk_Pts', 'Drawdown', 'RSI', 'Vol']
+                    sheet.append_row(headers)
+                    raw_data = [headers]
+            except Exception as e:
+                # If sheet panics with 200 response, assume blank and force headers
+                if "200" in str(e):
+                    headers = ['Date', 'Ticker', 'Price', 'Score', 'Decision', 'Risk_Pts', 'Drawdown', 'RSI', 'Vol']
+                    try: sheet.append_row(headers)
+                    except: pass
+                raw_data = []
+
+            existing_records = set()
+            if len(raw_data) > 1:
+                for row in raw_data[1:]:
+                    if len(row) > 1:
+                        existing_records.add((str(row[0]), str(row[1])))
             
             new_rows = []
             for coin in portfolio_data:
@@ -206,12 +233,11 @@ def log_scores(portfolio_data):
                     
             if new_rows:
                 sheet.append_rows(new_rows)
-            return # Exit function if GSheets succeeds
+            return 
     except Exception as e:
-        st.sidebar.error(f"Sheet Write Error: {e}")
-        pass # If anything fails, drop down to local CSV fallback
+        print(f"Google Sheet Log Error: {e}")
+        pass 
         
-    # 2. Local CSV Fallback
     filename = "historical_crypto_scores.csv"
     file_exists = os.path.isfile(filename)
     existing_records = set()
