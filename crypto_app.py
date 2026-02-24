@@ -39,7 +39,7 @@ def get_yf_ticker(symbol):
 CRYPTO_TIERS = {
     'BTC': 1, 'ETH': 1, 
     'SOL': 2, 'ADA': 2, 'AVAX': 2, 'DOT': 2, 'LINK': 2, 'NEAR': 2, 'APT': 2, 'OP': 2, 'INJ': 2, 'XRP': 2, 'BNB': 2, 'TRX': 2, 'LTC': 2, 'SUI': 2, 'TAO': 2,
-    'FIL': 2, 'LDO': 2, 'AR': 2, 'RNDR': 2, 'FTM': 2, 'HBAR': 2, 'TON': 2, 'BCH': 2, 'UNI': 2, 'XLM': 2,
+    'FIL': 2, 'LDO': 2, 'AR': 2, 'RNDR': 2, 'HBAR': 2, 'TON': 2, 'BCH': 2, 'XLM': 2,
     'DOGE': 3, 'SHIB': 3, 'PEPE': 3, 'FLOKI': 3, 'BONK': 3, 'WIF': 3 
 }
 
@@ -67,12 +67,10 @@ CRYPTO_META = {
     'LDO': {'desc': "The dominant liquid staking protocol for Ethereum.", 'utility': 90, 'decentralization': 40, 'staked': 10, 'target': 5, 'trend_term': "Lido Crypto"},
     'AR': {'desc': "Decentralized permaweb for immutable data storage.", 'utility': 80, 'decentralization': 75, 'staked': 20, 'target': 60, 'trend_term': "Arweave"},
     'RNDR': {'desc': "Distributed GPU rendering network for creators.", 'utility': 85, 'decentralization': 60, 'staked': 0, 'target': 15, 'trend_term': "Render Crypto"},
-    'FTM': {'desc': "High-performance DAG smart contract platform (Sonic).", 'utility': 75, 'decentralization': 60, 'staked': 45, 'target': 2, 'trend_term': "Fantom Crypto"},
     'HBAR': {'desc': "Enterprise-grade Hashgraph distributed ledger.", 'utility': 80, 'decentralization': 40, 'staked': 40, 'target': 0.20, 'trend_term': "Hedera Hashgraph"},
     'PEPE': {'desc': "A purely speculative frog-themed meme coin.", 'utility': 10, 'decentralization': 60, 'staked': 0, 'target': 0, 'trend_term': "Pepe Coin"},
     'TON': {'desc': "The Open Network L1 closely tied to Telegram.", 'utility': 80, 'decentralization': 40, 'staked': 35, 'target': 15, 'trend_term': "Toncoin"},
     'BCH': {'desc': "Bitcoin fork engineered specifically for daily payments.", 'utility': 60, 'decentralization': 80, 'staked': 0, 'target': 1000, 'trend_term': "Bitcoin Cash"},
-    'UNI': {'desc': "The leading decentralized exchange and AMM on Ethereum.", 'utility': 90, 'decentralization': 60, 'staked': 0, 'target': 20, 'trend_term': "Uniswap"},
     'XLM': {'desc': "Payments network for fast, low-cost global transfers.", 'utility': 70, 'decentralization': 50, 'staked': 0, 'target': 0.50, 'trend_term': "Stellar Lumens"},
     'TRX': {'desc': "Entertainment-focused L1 dominating the Tether market.", 'utility': 75, 'decentralization': 40, 'staked': 50, 'target': 0.20, 'trend_term': "Tron Crypto"},
     'LTC': {'desc': "One of the oldest PoW coins, known as digital silver.", 'utility': 60, 'decentralization': 90, 'staked': 0, 'target': 150, 'trend_term': "Litecoin"}
@@ -760,8 +758,8 @@ st.markdown("Live technical scan of the top layer-1s, layer-2s, and blue-chip to
 
 global_universe = [
     'BTC', 'ETH', 'BNB', 'SOL', 'XRP', 'ADA', 'AVAX', 'DOGE', 'DOT',
-    'TRX', 'LINK', 'TON', 'SHIB', 'LTC', 'BCH', 'UNI', 'NEAR',
-    'XLM', 'APT', 'OP', 'INJ', 'FIL', 'LDO', 'AR', 'RNDR', 'FTM', 'HBAR', 'PEPE', 'SUI', 'TAO'
+    'TRX', 'LINK', 'TON', 'SHIB', 'LTC', 'BCH', 'NEAR',
+    'XLM', 'APT', 'OP', 'INJ', 'FIL', 'LDO', 'AR', 'RNDR', 'HBAR', 'PEPE', 'SUI', 'TAO'
 ]
 
 if st.checkbox("Run Crypto Market Scan (Takes ~15 seconds)"):
