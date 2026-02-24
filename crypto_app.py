@@ -103,7 +103,7 @@ def load_score_history():
                 df['Date'] = pd.to_datetime(df['Date']).dt.tz_localize(None)
                 return df
     except FileNotFoundError:
-        pass # Ignored if testing locally without secrets
+        pass 
     except Exception as e:
         print(f"Google Sheets Load Error: {e}")
         pass
@@ -200,7 +200,7 @@ def log_scores(portfolio_data):
                 print(f"✅ Successfully logged {len(new_rows)} rows to Google Sheets.")
             return
     except FileNotFoundError:
-        pass # Ignored if testing locally without secrets
+        pass 
     except Exception as e:
         print(f"⚠️ Google Sheets Log Error: {e}")
         pass
@@ -270,15 +270,22 @@ def get_crypto_data(port_dict, global_fng_val):
 
     for display_ticker, data in port_dict.items():
         yf_ticker = get_yf_ticker(display_ticker)
-        
         shares, avg_price = data.get('shares', 0), data.get('avg_price', 0)
         
-        # --- REMOVED session=yf_session to fix the curl_cffi error ---
         coin = yf.Ticker(yf_ticker)
+        hist = pd.DataFrame()
         
-        hist = coin.history(period='max')
-        
-        # --- KEEP SPEED BUMPER: Pause to prevent hitting rate limits ---
+        # --- ANTI-CRASH RETRY LOGIC ---
+        # Gracefully handle Yahoo Rate Limits without crashing the app
+        for attempt in range(3):
+            try:
+                hist = coin.history(period='max')
+                if not hist.empty:
+                    break
+            except Exception:
+                time.sleep(2) # Pause and backoff if Yahoo throws an error
+                
+        # --- KEEP SPEED BUMPER ---
         time.sleep(0.5)
         
         if hist.empty: continue
