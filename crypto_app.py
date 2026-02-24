@@ -27,13 +27,8 @@ st.set_page_config(page_title="Crypto Quant Command Center", layout="wide", page
 
 # --- YAHOO FINANCE TICKER MAP ---
 YF_TICKER_MAP = {
-    'SUI': 'SUI20947-USD', 'TAO': 'TAO22974-USD', 'PEPE': 'PEPE24478-USD', 'WIF': 'WIF28507-USD',
-    'BONK': 'BONK23095-USD', 'TON': 'TON11419-USD', 'APT': 'APT21794-USD', 'OP': 'OP21594-USD',
-    'UNI': 'UNI7083-USD', 'DOT': 'DOT-USD', 'NEAR': 'NEAR-USD', 'INJ': 'INJ-USD',
-    'FIL': 'FIL-USD', 'LDO': 'LDO-USD', 'AR': 'AR-USD', 'HBAR': 'HBAR-USD', 
-    'BCH': 'BCH-USD', 'XLM': 'XLM-USD', 'TRX': 'TRX-USD', 'LTC': 'LTC-USD',
     'RNDR': 'RENDER-USD', 
-    'FTM': 'S-USD'        
+    'MATIC': 'POL-USD'
 }
 
 def get_yf_ticker(symbol):
@@ -104,7 +99,6 @@ def load_score_history():
             gc = gspread.authorize(credentials)
             
             sheet = gc.open("Crypto_Quant_Tracker").sheet1
-            # FIX: Use get_all_values() and manually construct DataFrame to avoid 'Date' KeyError
             raw_data = sheet.get_all_values()
             if len(raw_data) > 1:
                 headers = raw_data[0]
@@ -200,7 +194,6 @@ def log_scores(portfolio_data):
             
             sheet = gc.open("Crypto_Quant_Tracker").sheet1
             
-            # Use get_all_values() to prevent metadata crashing on empty sheets
             try:
                 raw_data = sheet.get_all_values()
                 if not raw_data:
@@ -208,7 +201,6 @@ def log_scores(portfolio_data):
                     sheet.append_row(headers)
                     raw_data = [headers]
             except Exception as e:
-                # If sheet panics with 200 response, assume blank and force headers
                 if "200" in str(e):
                     headers = ['Date', 'Ticker', 'Price', 'Score', 'Decision', 'Risk_Pts', 'Drawdown', 'RSI', 'Vol']
                     try: sheet.append_row(headers)
@@ -226,7 +218,7 @@ def log_scores(portfolio_data):
                 record_key = (today_str, coin['Ticker'])
                 if record_key not in existing_records:
                     new_rows.append([
-                        today_str, coin['Ticker'], round(coin['Price'], 4), coin['Score'], 
+                        today_str, coin['Ticker'], round(coin['Price'], 8), coin['Score'], 
                         coin['Decision'], coin['Risk_Pts'], coin.get('Drawdown', 'N/A'), 
                         coin.get('RSI', 'N/A'), coin.get('Vol', 'N/A')
                     ])
@@ -255,7 +247,7 @@ def log_scores(portfolio_data):
         if not file_exists: writer.writeheader()
         for coin in portfolio_data:
             if (today_str, coin['Ticker']) not in existing_records:
-                writer.writerow({'Date': today_str, 'Ticker': coin['Ticker'], 'Price': round(coin['Price'], 4), 'Score': coin['Score'], 'Decision': coin['Decision'], 'Risk_Pts': coin['Risk_Pts'], 'Drawdown': coin.get('Drawdown', 'N/A'), 'RSI': coin.get('RSI', 'N/A'), 'Vol': coin.get('Vol', 'N/A')})
+                writer.writerow({'Date': today_str, 'Ticker': coin['Ticker'], 'Price': round(coin['Price'], 8), 'Score': coin['Score'], 'Decision': coin['Decision'], 'Risk_Pts': coin['Risk_Pts'], 'Drawdown': coin.get('Drawdown', 'N/A'), 'RSI': coin.get('RSI', 'N/A'), 'Vol': coin.get('Vol', 'N/A')})
 
 # --- SIDEBAR & MANUAL ENTRY ---
 st.sidebar.header("👝 Manage Crypto Portfolio")
@@ -264,7 +256,7 @@ st.sidebar.markdown("Enter your coins manually below.")
 with st.sidebar.form("add_crypto_form"):
     new_coin = st.text_input("Coin Symbol (e.g., BTC)").strip().upper()
     new_qty = st.number_input("Quantity Owned", min_value=0.0, format="%.6f")
-    new_avg = st.number_input("Average Cost ($)", min_value=0.0, format="%.4f")
+    new_avg = st.number_input("Average Cost ($)", min_value=0.0, format="%.8f")
     submit_add = st.form_submit_button("➕ Add to Portfolio")
 
     if submit_add and new_coin:
@@ -561,8 +553,13 @@ def render_score_card(coin, today_date, score_history=None, is_watchlist=False, 
     
     sub1, sub2 = st.columns(2)
     with sub1:
-        price_format = "${:.6f}" if coin.get('Price', 0.0) < 1 else "${:,.2f}"
-        st.write(f"**Price:** {price_format.format(coin.get('Price', 0.0))}")
+        price_val = coin.get('Price', 0.0)
+        if price_val < 0.001: price_format = "${:.8f}"
+        elif price_val < 1: price_format = "${:.4f}"
+        else: price_format = "${:,.2f}"
+        
+        st.write(f"**Price:** {price_format.format(price_val)}")
+        
         dd = coin.get('Drawdown', 0)
         ath = coin.get('ATH', 0)
         st.write(f"**2Y ATH:** {price_format.format(ath)}")
@@ -581,7 +578,11 @@ def render_score_card(coin, today_date, score_history=None, is_watchlist=False, 
     is_search_or_watch = coin['Shares'] == 0 
     if not is_search_or_watch:
         ret = ((coin['Price'] - coin['Avg']) / coin['Avg']) * 100 if coin['Avg'] > 0 else 0
-        avg_str = "$••••" if hide_dollars else (f"${coin['Avg']:.6f}" if coin['Avg'] < 1 else f"${coin['Avg']:.2f}")
+        
+        if coin['Avg'] < 0.001: avg_str = "$••••" if hide_dollars else f"${coin['Avg']:.8f}"
+        elif coin['Avg'] < 1: avg_str = "$••••" if hide_dollars else f"${coin['Avg']:.4f}"
+        else: avg_str = "$••••" if hide_dollars else f"${coin['Avg']:,.2f}"
+        
         val_str = "$••••" if hide_dollars else f"${coin['Val']:,.0f}"
         ret_color = "#2ca02c" if ret >= 0 else "#d62728"
         
