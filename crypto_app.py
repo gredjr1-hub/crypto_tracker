@@ -63,7 +63,6 @@ CRYPTO_META = {
     'DOGE': {'desc': "The original PoW meme cryptocurrency.", 'utility': 30, 'decentralization': 75, 'staked': 0, 'target': 1.00, 'trend_term': "Dogecoin"},
     'SHIB': {'desc': "ERC-20 meme token with building DeFi ecosystem.", 'utility': 35, 'decentralization': 60, 'staked': 2, 'target': 0.00008, 'trend_term': "Shiba Inu Coin"},
     'DOT': {'desc': "Interoperability network connecting bespoke parachains.", 'utility': 80, 'decentralization': 75, 'staked': 52, 'target': 25, 'trend_term': "Polkadot Crypto"},
-    'MATIC': {'desc': "Ethereum's premier L2 scaling solution (Polygon).", 'utility': 85, 'decentralization': 60, 'staked': 35, 'target': 2.00, 'trend_term': "Polygon Crypto"},
     'NEAR': {'desc': "Highly scalable, sharded Proof-of-Stake L1.", 'utility': 80, 'decentralization': 65, 'staked': 45, 'target': 15, 'trend_term': "Near Protocol"},
     'APT': {'desc': "High-performance L1 spun out of Facebook's Diem project.", 'utility': 80, 'decentralization': 40, 'staked': 80, 'target': 30, 'trend_term': "Aptos Crypto"},
     'OP': {'desc': "Optimistic rollup L2 scaling network for Ethereum.", 'utility': 85, 'decentralization': 50, 'staked': 20, 'target': 8, 'trend_term': "Optimism Crypto"},
@@ -86,7 +85,7 @@ CRYPTO_META = {
 # --- DATA LOADERS & MULTI-DEVICE LOGGING ---
 @st.cache_data(ttl=60)
 def load_score_history():
-    """Loads the historical quant scores, preferring Google Sheets and falling back to CSV."""
+    """Loads the historical quant scores from Google Sheets, with verbose error tracking."""
     try:
         if hasattr(st, "secrets") and "gcp_service_account" in st.secrets:
             import gspread
@@ -101,17 +100,18 @@ def load_score_history():
             gc = gspread.authorize(credentials)
             
             sheet = gc.open("Crypto_Quant_Tracker").sheet1
-            data = sheet.get_all_records()
-            if data:
-                df = pd.DataFrame(data)
+            
+            # Use get_all_values instead of get_all_records to bypass empty header crashes
+            data = sheet.get_all_values() 
+            if len(data) > 1:
+                headers = data.pop(0)
+                df = pd.DataFrame(data, columns=headers)
                 df['Date'] = pd.to_datetime(df['Date']).dt.tz_localize(None)
                 return df
     except FileNotFoundError:
         pass 
     except Exception as e:
-        # Ignore the empty sheet 200 response
-        if "200" not in str(e):
-            st.sidebar.error(f"Failed to Load Sheets History: {str(e)}")
+        st.sidebar.error(f"⚠️ Read Error: {str(e)}")
         pass
 
     if os.path.exists("historical_crypto_scores.csv"):
@@ -175,7 +175,7 @@ def calculate_obv(close, volume):
     return obv
 
 def log_scores(portfolio_data):
-    """Logs scores to Google Sheets if configured, otherwise safely falls back to local CSV."""
+    """Deep logging function with built-in empty sheet protection."""
     today_str = datetime.today().strftime('%Y-%m-%d')
     
     try:
@@ -188,17 +188,33 @@ def log_scores(portfolio_data):
             if "private_key" in skey:
                 skey["private_key"] = skey["private_key"].replace("\\n", "\n")
                 
-            credentials = Credentials.from_service_account_info(skey, scopes=scopes)
-            gc = gspread.authorize(credentials)
-            
-            sheet = gc.open("Crypto_Quant_Tracker").sheet1
+            try:
+                credentials = Credentials.from_service_account_info(skey, scopes=scopes)
+                gc = gspread.authorize(credentials)
+            except Exception as auth_e:
+                st.sidebar.error(f"Google Auth Failed: {auth_e}")
+                return
             
             try:
-                existing_data = sheet.get_all_records()
-                existing_records = set((str(row.get('Date', '')), str(row.get('Ticker', ''))) for row in existing_data)
+                sheet = gc.open("Crypto_Quant_Tracker").sheet1
+            except Exception as open_e:
+                st.sidebar.error(f"Could not open 'Crypto_Quant_Tracker': {open_e}")
+                return
+            
+            # Fix the Response [200] issue by forcing headers if the sheet is blank
+            existing_records = set()
+            try:
+                raw_data = sheet.get_all_values()
+                if not raw_data: # If completely empty, inject headers
+                    headers = ['Date', 'Ticker', 'Price', 'Score', 'Decision', 'Risk_Pts', 'Drawdown', 'RSI', 'Vol']
+                    sheet.append_row(headers)
+                elif len(raw_data) > 1: # If it has data, extract the history
+                    for row in raw_data[1:]: # Skip header
+                        if len(row) > 1:
+                            existing_records.add((str(row[0]), str(row[1])))
             except Exception as read_err:
-                # If sheet is empty, get_all_records fails. Just assume empty.
-                existing_records = set()
+                st.sidebar.error(f"Failed to read sheet data: {read_err}")
+                return
             
             new_rows = []
             for coin in portfolio_data:
@@ -211,14 +227,16 @@ def log_scores(portfolio_data):
                     ])
                     
             if new_rows:
-                sheet.append_rows(new_rows)
-                st.toast(f"✅ Successfully logged {len(new_rows)} fresh records to Google Sheets!")
+                try:
+                    sheet.append_rows(new_rows)
+                    st.toast(f"✅ Successfully backed up {len(new_rows)} records to Google Sheets!")
+                except Exception as write_err:
+                    st.sidebar.error(f"Failed writing rows to sheet: {write_err}")
             return
     except FileNotFoundError:
         pass 
     except Exception as e:
-        if "200" not in str(e):
-            st.sidebar.error(f"Failed to log to Google Sheets: {str(e)}")
+        st.sidebar.error(f"⚠️ General Sheets Error: {str(e)}")
         pass
         
     filename = "historical_crypto_scores.csv"
