@@ -532,7 +532,7 @@ def render_score_card(coin, today_date, score_history=None, is_watchlist=False, 
                 st.rerun()
 
     trend_html = ""
-    if score_history is not None and not score_history.empty:
+    if score_history is not None and not score_history.empty and 'Ticker' in score_history.columns:
         t_scores = score_history[score_history['Ticker'] == ticker].copy()
         if not t_scores.empty:
             ninety_days_ago = today_date - timedelta(days=90)
@@ -639,7 +639,7 @@ def draw_crypto_row(coin, histories, today_date, is_watchlist=False, hide_dollar
         
         master_hist = master_hist.tail(730).copy()
 
-        if score_history is not None and not score_history.empty:
+        if score_history is not None and not score_history.empty and 'Ticker' in score_history.columns:
             t_scores = score_history[score_history['Ticker'] == ticker].copy()
             if not t_scores.empty:
                 t_scores['Date'] = pd.to_datetime(t_scores['Date']).dt.normalize()
