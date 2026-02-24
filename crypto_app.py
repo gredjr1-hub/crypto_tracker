@@ -264,12 +264,6 @@ if st.session_state.crypto_portfolio:
 def get_crypto_data(port_dict, global_fng_val):
     if not port_dict: return [], {}, 0 
     
-    # --- RATE LIMIT FIX: CREATE CUSTOM REQUESTS SESSION WITH BROWSER USER-AGENT ---
-    yf_session = requests.Session()
-    yf_session.headers.update({
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36"
-    })
-    
     portfolio_data = []
     all_histories = {} 
     total_value = 0
@@ -279,12 +273,12 @@ def get_crypto_data(port_dict, global_fng_val):
         
         shares, avg_price = data.get('shares', 0), data.get('avg_price', 0)
         
-        # --- PASS SESSION INTO YFINANCE TO BYPASS BOTS BLOCK ---
-        coin = yf.Ticker(yf_ticker, session=yf_session)
+        # --- REMOVED session=yf_session to fix the curl_cffi error ---
+        coin = yf.Ticker(yf_ticker)
         
         hist = coin.history(period='max')
         
-        # --- SPEED BUMPER: PAUSE FOR HALF A SECOND SO WE DON'T SPAM THE API ---
+        # --- KEEP SPEED BUMPER: Pause to prevent hitting rate limits ---
         time.sleep(0.5)
         
         if hist.empty: continue
@@ -606,10 +600,8 @@ def draw_crypto_row(coin, histories, today_date, is_watchlist=False, hide_dollar
     
     if master_hist is not None and not master_hist.empty:
         
-        # --- FIX #3: Crop dataframe to 2 years to fix massive chart white space ---
         master_hist = master_hist.tail(730).copy()
 
-        # --- FIX #1: Date normalization for Score Merging ---
         if score_history is not None and not score_history.empty:
             t_scores = score_history[score_history['Ticker'] == ticker].copy()
             if not t_scores.empty:
@@ -628,7 +620,6 @@ def draw_crypto_row(coin, histories, today_date, is_watchlist=False, hide_dollar
         with cols[2]:
             fig = go.Figure()
             
-            # --- Draw the Quant Score Line ---
             if 'Score' in master_hist.columns and not master_hist['Score'].dropna().empty:
                 fig.add_trace(go.Scatter(x=master_hist.index, y=master_hist['Score'], mode='lines', name='Quant Score', line=dict(color='rgba(255, 0, 255, 0.7)', width=2.5, dash='dot'), yaxis='y2'))
 
@@ -665,7 +656,6 @@ def draw_crypto_row(coin, histories, today_date, is_watchlist=False, hide_dollar
                     type="date"
                 ),
                 yaxis=dict(visible=True, side='left', autorange=True), 
-                # --- Enabled yaxis2 so the 0-100 scale is visible for the Score ---
                 yaxis2=dict(range=[0, 100], overlaying='y', side='right', visible=True, title="Quant Score", showgrid=False, tickfont=dict(color='fuchsia')), 
                 showlegend=False, 
                 height=350, 
