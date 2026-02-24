@@ -15,11 +15,6 @@ try:
 except ImportError:
     pass
 
-# =====================================================================
-# 🛑 ACTION REQUIRED: PASTE YOUR GOOGLE SHEET URL BELOW 🛑
-# =====================================================================
-SHEET_URL = "https://docs.google.com/spreadsheets/d/1f9wjI5kMQE5ut18KB2BZ1T3LdJt1kBUMGcv20FaeLtQ/edit"
-
 # --- SESSION STATE INITIALIZATION ---
 if 'startup_sound_played' not in st.session_state:
     st.session_state.startup_sound_played = False
@@ -91,37 +86,30 @@ CRYPTO_META = {
 # --- DATA LOADERS & MULTI-DEVICE LOGGING ---
 @st.cache_data(ttl=60)
 def load_score_history():
-    """Loads the historical quant scores directly via URL, handling empty sheet quirks."""
-    if "YOUR_UNIQUE_ID_HERE" in SHEET_URL:
-        st.sidebar.warning("⚠️ Setup needed: Open your code and paste your Google Sheet URL into Line 20.")
-        
+    """Loads the historical quant scores, preferring Google Sheets and falling back to CSV."""
     try:
-        if hasattr(st, "secrets") and "gcp_service_account" in st.secrets:
+        if "gcp_service_account" in st.secrets:
             import gspread
             from google.oauth2.service_account import Credentials
-            scopes = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
-            skey = dict(st.secrets["gcp_service_account"])
             
-            if "private_key" in skey:
-                skey["private_key"] = skey["private_key"].replace("\\n", "\n")
-                
+            scopes = [
+                "https://www.googleapis.com/auth/spreadsheets",
+                "https://www.googleapis.com/auth/drive"
+            ]
+            skey = dict(st.secrets["gcp_service_account"])
             credentials = Credentials.from_service_account_info(skey, scopes=scopes)
             gc = gspread.authorize(credentials)
             
-            if "YOUR_UNIQUE_ID_HERE" not in SHEET_URL:
-                sheet = gc.open_by_url(SHEET_URL).sheet1
-                # get_all_values() is used to avoid crashing on missing headers
-                data = sheet.get_all_values() 
-                if len(data) > 1:
-                    headers = data.pop(0)
-                    df = pd.DataFrame(data, columns=headers)
-                    df['Date'] = pd.to_datetime(df['Date']).dt.tz_localize(None)
-                    return df
-    except FileNotFoundError:
-        pass 
+            # Pull from Google Sheet
+            sheet = gc.open("Crypto_Quant_Tracker").sheet1
+            data = sheet.get_all_records()
+            if data:
+                df = pd.DataFrame(data)
+                df['Date'] = pd.to_datetime(df['Date']).dt.tz_localize(None)
+                return df
     except Exception as e:
-        # Silently pass if it is the empty sheet 200 quirk so the app can continue
-        pass
+        st.sidebar.error(f"Sheet Load Error: {e}")
+        pass # Fail silently and fallback to local CSV
 
     if os.path.exists("historical_crypto_scores.csv"):
         try:
@@ -129,6 +117,7 @@ def load_score_history():
             df['Date'] = pd.to_datetime(df['Date']).dt.tz_localize(None)
             return df
         except Exception: pass
+        
     return pd.DataFrame()
 
 @st.cache_data(ttl=3600)
@@ -184,55 +173,26 @@ def calculate_obv(close, volume):
     return obv
 
 def log_scores(portfolio_data):
-    """Direct URL logger that force-initializes empty sheets to fix 200 errors."""
+    """Logs scores to Google Sheets if configured, otherwise safely falls back to local CSV."""
     today_str = datetime.today().strftime('%Y-%m-%d')
     
+    # 1. Try Google Sheets First
     try:
-        if hasattr(st, "secrets") and "gcp_service_account" in st.secrets:
+        if "gcp_service_account" in st.secrets:
             import gspread
             from google.oauth2.service_account import Credentials
-            scopes = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
+            
+            scopes = [
+                "https://www.googleapis.com/auth/spreadsheets",
+                "https://www.googleapis.com/auth/drive"
+            ]
             skey = dict(st.secrets["gcp_service_account"])
+            credentials = Credentials.from_service_account_info(skey, scopes=scopes)
+            gc = gspread.authorize(credentials)
             
-            if "private_key" in skey:
-                skey["private_key"] = skey["private_key"].replace("\\n", "\n")
-                
-            try:
-                credentials = Credentials.from_service_account_info(skey, scopes=scopes)
-                gc = gspread.authorize(credentials)
-            except Exception as auth_e:
-                st.sidebar.error(f"Google Auth Failed: {auth_e}")
-                return
-            
-            if "YOUR_UNIQUE_ID_HERE" in SHEET_URL:
-                return # User hasn't added URL yet
-                
-            try:
-                sheet = gc.open_by_url(SHEET_URL).sheet1
-            except Exception as open_e:
-                st.sidebar.error(f"Could not open Sheet via URL: {open_e}")
-                return
-            
-            existing_records = set()
-            try:
-                raw_data = sheet.get_all_values()
-                if not raw_data:
-                    # Sheet is completely blank. Force headers.
-                    headers = ['Date', 'Ticker', 'Price', 'Score', 'Decision', 'Risk_Pts', 'Drawdown', 'RSI', 'Vol']
-                    sheet.append_row(headers)
-                elif len(raw_data) > 1:
-                    for row in raw_data[1:]:
-                        if len(row) > 1:
-                            existing_records.add((str(row[0]), str(row[1])))
-            except Exception as read_err:
-                if "200" in str(read_err):
-                    # gspread panicked at a blank sheet. Force headers immediately.
-                    headers = ['Date', 'Ticker', 'Price', 'Score', 'Decision', 'Risk_Pts', 'Drawdown', 'RSI', 'Vol']
-                    try: sheet.append_row(headers)
-                    except: pass
-                else:
-                    st.sidebar.error(f"Failed to read sheet data: {read_err}")
-                    return
+            sheet = gc.open("Crypto_Quant_Tracker").sheet1
+            existing_data = sheet.get_all_records()
+            existing_records = set((str(row.get('Date', '')), str(row.get('Ticker', ''))) for row in existing_data)
             
             new_rows = []
             for coin in portfolio_data:
@@ -245,20 +205,13 @@ def log_scores(portfolio_data):
                     ])
                     
             if new_rows:
-                try:
-                    sheet.append_rows(new_rows)
-                    st.toast(f"✅ Successfully backed up {len(new_rows)} records to Google Sheets!")
-                except Exception as write_err:
-                    st.sidebar.error(f"Failed writing rows to sheet: {write_err}")
-            return
-    except FileNotFoundError:
-        pass 
+                sheet.append_rows(new_rows)
+            return # Exit function if GSheets succeeds
     except Exception as e:
-        error_msg = str(e)
-        if "200" not in error_msg:
-            st.sidebar.error(f"⚠️ General Sheets Error: {error_msg}")
-        pass
+        st.sidebar.error(f"Sheet Write Error: {e}")
+        pass # If anything fails, drop down to local CSV fallback
         
+    # 2. Local CSV Fallback
     filename = "historical_crypto_scores.csv"
     file_exists = os.path.isfile(filename)
     existing_records = set()
