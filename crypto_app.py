@@ -28,9 +28,12 @@ st.set_page_config(page_title="Crypto Quant Command Center", layout="wide", page
 YF_TICKER_MAP = {
     'SUI': 'SUI20947-USD', 'TAO': 'TAO22974-USD', 'PEPE': 'PEPE24478-USD', 'WIF': 'WIF28507-USD',
     'BONK': 'BONK23095-USD', 'TON': 'TON11419-USD', 'APT': 'APT21794-USD', 'OP': 'OP21594-USD',
-    'UNI': 'UNI7083-USD', 'DOT': 'DOT-USD', 'MATIC': 'MATIC-USD', 'NEAR': 'NEAR-USD', 'INJ': 'INJ-USD',
+    'UNI': 'UNI7083-USD', 'DOT': 'DOT-USD', 'NEAR': 'NEAR-USD', 'INJ': 'INJ-USD',
     'FIL': 'FIL-USD', 'LDO': 'LDO-USD', 'AR': 'AR-USD', 'RNDR': 'RNDR-USD', 'FTM': 'FTM-USD', 
-    'HBAR': 'HBAR-USD', 'BCH': 'BCH-USD', 'XLM': 'XLM-USD', 'TRX': 'TRX-USD', 'LTC': 'LTC-USD'
+    'HBAR': 'HBAR-USD', 'BCH': 'BCH-USD', 'XLM': 'XLM-USD', 'TRX': 'TRX-USD', 'LTC': 'LTC-USD',
+    # --- MIGRATED TICKERS ---
+    'MATIC': 'POL-USD',   # MATIC migrated to Polygon Ecosystem Token (POL)
+    'FTM': 'S-USD'        # Fantom migrated to Sonic (S)
 }
 
 def get_yf_ticker(symbol):
@@ -69,7 +72,7 @@ CRYPTO_META = {
     'LDO': {'desc': "The dominant liquid staking protocol for Ethereum.", 'utility': 90, 'decentralization': 40, 'staked': 10, 'target': 5, 'trend_term': "Lido Crypto"},
     'AR': {'desc': "Decentralized permaweb for immutable data storage.", 'utility': 80, 'decentralization': 75, 'staked': 20, 'target': 60, 'trend_term': "Arweave"},
     'RNDR': {'desc': "Distributed GPU rendering network for creators.", 'utility': 85, 'decentralization': 60, 'staked': 0, 'target': 15, 'trend_term': "Render Crypto"},
-    'FTM': {'desc': "High-performance DAG smart contract platform.", 'utility': 75, 'decentralization': 60, 'staked': 45, 'target': 2, 'trend_term': "Fantom Crypto"},
+    'FTM': {'desc': "High-performance DAG smart contract platform (Sonic).", 'utility': 75, 'decentralization': 60, 'staked': 45, 'target': 2, 'trend_term': "Fantom Crypto"},
     'HBAR': {'desc': "Enterprise-grade Hashgraph distributed ledger.", 'utility': 80, 'decentralization': 40, 'staked': 40, 'target': 0.20, 'trend_term': "Hedera Hashgraph"},
     'PEPE': {'desc': "A purely speculative frog-themed meme coin.", 'utility': 10, 'decentralization': 60, 'staked': 0, 'target': 0, 'trend_term': "Pepe Coin"},
     'TON': {'desc': "The Open Network L1 closely tied to Telegram.", 'utility': 80, 'decentralization': 40, 'staked': 35, 'target': 15, 'trend_term': "Toncoin"},
@@ -80,9 +83,27 @@ CRYPTO_META = {
     'LTC': {'desc': "One of the oldest PoW coins, known as digital silver.", 'utility': 60, 'decentralization': 90, 'staked': 0, 'target': 150, 'trend_term': "Litecoin"}
 }
 
-# --- DATA LOADERS ---
+# --- DATA LOADERS & MULTI-DEVICE LOGGING ---
 @st.cache_data(ttl=60)
 def load_score_history():
+    """Loads the historical quant scores, preferring Google Sheets and falling back to CSV."""
+    try:
+        if "gcp_service_account" in st.secrets:
+            import gspread
+            from google.oauth2.service_account import Credentials
+            scopes = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
+            skey = dict(st.secrets["gcp_service_account"])
+            credentials = Credentials.from_service_account_info(skey, scopes=scopes)
+            gc = gspread.authorize(credentials)
+            sheet = gc.open("Crypto_Quant_History").sheet1
+            data = sheet.get_all_records()
+            if data:
+                df = pd.DataFrame(data)
+                df['Date'] = pd.to_datetime(df['Date']).dt.tz_localize(None)
+                return df
+    except Exception:
+        pass
+
     if os.path.exists("historical_crypto_scores.csv"):
         try:
             df = pd.read_csv("historical_crypto_scores.csv")
@@ -104,7 +125,6 @@ def get_fear_and_greed():
 
 @st.cache_data(ttl=86400) 
 def get_google_trend(keyword):
-    """Fetches real-time Google Search interest. Returns None if Google blocks the API call."""
     try:
         pytrends = TrendReq(hl='en-US', tz=360, timeout=(5,10), retries=2, backoff_factor=0.5)
         pytrends.build_payload([keyword], cat=0, timeframe='today 3-m', geo='', gprop='')
@@ -144,9 +164,40 @@ def calculate_obv(close, volume):
     obv = (np.sign(close.diff()) * volume).fillna(0).cumsum()
     return obv
 
-def log_scores_to_csv(portfolio_data):
-    filename = "historical_crypto_scores.csv"
+def log_scores(portfolio_data):
+    """Logs scores to Google Sheets if configured, otherwise safely falls back to local CSV."""
     today_str = datetime.today().strftime('%Y-%m-%d')
+    
+    try:
+        if "gcp_service_account" in st.secrets:
+            import gspread
+            from google.oauth2.service_account import Credentials
+            scopes = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
+            skey = dict(st.secrets["gcp_service_account"])
+            credentials = Credentials.from_service_account_info(skey, scopes=scopes)
+            gc = gspread.authorize(credentials)
+            
+            sheet = gc.open("Crypto_Quant_History").sheet1
+            existing_data = sheet.get_all_records()
+            existing_records = set((str(row.get('Date', '')), str(row.get('Ticker', ''))) for row in existing_data)
+            
+            new_rows = []
+            for coin in portfolio_data:
+                record_key = (today_str, coin['Ticker'])
+                if record_key not in existing_records:
+                    new_rows.append([
+                        today_str, coin['Ticker'], round(coin['Price'], 4), coin['Score'], 
+                        coin['Decision'], coin['Risk_Pts'], coin.get('Drawdown', 'N/A'), 
+                        coin.get('RSI', 'N/A'), coin.get('Vol', 'N/A')
+                    ])
+                    
+            if new_rows:
+                sheet.append_rows(new_rows)
+            return
+    except Exception:
+        pass
+        
+    filename = "historical_crypto_scores.csv"
     file_exists = os.path.isfile(filename)
     existing_records = set()
     
@@ -228,7 +279,6 @@ def get_crypto_data(port_dict, global_fng_val):
         obv_trend = "Neutral"
         
         if not hist.empty:
-            # --- 2-YEAR ATH CALCULATION ---
             two_years_ago = hist.index[-1] - timedelta(days=730)
             hist_2y = hist[hist.index >= two_years_ago]
             ath = hist_2y['Close'].max() if not hist_2y.empty else hist['Close'].max()
@@ -274,7 +324,6 @@ def get_crypto_data(port_dict, global_fng_val):
         if tier == 4: risk_points += 1 
         if tier == 3: risk_points += 1 
 
-        # 0. Fundamental & Macro Targets
         if meta['utility'] >= 85: score += 5; breakdown.append(f"🧠 **High Utility:** +5 pts")
         elif meta['utility'] < 50: score -= 10; breakdown.append(f"📉 **Low Utility/Meme:** -10 pts")
             
@@ -300,7 +349,6 @@ def get_crypto_data(port_dict, global_fng_val):
                 breakdown.append(f"🚀 **Massive Upside Potential ({upside:+.1f}%):** +15 pts")
             score += upside_pts
 
-        # 1. Retail FOMO (Google Trends Penalty)
         if google_fomo is not None:
             if google_fomo >= 80:
                 score -= 20; risk_points += 1
@@ -313,7 +361,6 @@ def get_crypto_data(port_dict, global_fng_val):
         else:
             breakdown.append(f"⚠️ **Retail FOMO:** [Google API Rate Limited/Blocked]")
 
-        # 2. Historical Drawdown (2-Year Rolling)
         dd_abs = abs(drawdown)
         if tier <= 2:
             if dd_abs <= 15: dd_pts = -10; breakdown.append(f"❌ **Near 2Y ATH ({drawdown:.1f}%):** -10 pts (FOMO Zone)")
@@ -329,7 +376,6 @@ def get_crypto_data(port_dict, global_fng_val):
         else: 
             if dd_abs > 80: score -= 20; risk_points += 2; breakdown.append(f"🚨 **Dead Altcoin Risk ({drawdown:.1f}%):** -20 pts [+2 Risk]")
 
-        # 3. Distance from 200 SMA
         if sma_200 != 0 and current_price > 0:
             sma_dist = ((current_price - sma_200) / sma_200) * 100
             if sma_dist > 40: sma_pts = -20; breakdown.append(f"❌ **SMA Ext ({sma_dist:+.1f}%):** -20 pts (Severely Overextended)")
@@ -343,7 +389,6 @@ def get_crypto_data(port_dict, global_fng_val):
             if sma_50 > sma_200: score += 5; breakdown.append("✅ **Golden Cross:** +5 pts")
             else: score -= 10; breakdown.append("❌ **Death Cross:** -10 pts")
 
-        # 4. RSI Momentum 
         if isinstance(rsi_14, (float, int)):
             if rsi_14 < 30: rsi_pts = 10
             elif rsi_14 < 40: rsi_pts = 5
@@ -353,7 +398,6 @@ def get_crypto_data(port_dict, global_fng_val):
             else: rsi_pts = -25
             score += rsi_pts; breakdown.append(f"{'✅' if rsi_pts > 0 else '❌' if rsi_pts < 0 else '➖'} **RSI ({rsi_14}):** {rsi_pts:+} pts")
 
-        # 5. OBV & MACD
         if obv_trend == "Accumulating": score += 5; breakdown.append(f"🐋 **OBV:** +5 pts (Whale Accumulation)")
         elif obv_trend == "Distributing": score -= 5; breakdown.append(f"🚨 **OBV:** -5 pts (Whale Distribution)")
 
@@ -361,7 +405,6 @@ def get_crypto_data(port_dict, global_fng_val):
             if macd_val > sig_val: score += 5
             else: score -= 5
 
-        # 6. Global Sentiment Modifier
         if global_fng_val > 75: fng_adj = -15; breakdown.append(f"❌ **Market Euphoria ({global_fng_val}):** -15 pts (Take Profits)")
         elif global_fng_val > 60: fng_adj = -5; breakdown.append(f"⚠️ **Market Greed ({global_fng_val}):** -5 pts")
         elif global_fng_val < 30: fng_adj = 10; breakdown.append(f"✅ **Market Capitulation ({global_fng_val}):** +10 pts (Contrarian Buy)")
@@ -398,7 +441,7 @@ def get_crypto_data(port_dict, global_fng_val):
             'Breakdown': breakdown
         })
 
-    log_scores_to_csv(portfolio_data)
+    log_scores(portfolio_data)
     return portfolio_data, all_histories, total_value
 
 # --- UI HELPER: SCORE CARD COMPONENT ---
@@ -547,7 +590,6 @@ def draw_crypto_row(coin, histories, today_date, is_watchlist=False, hide_dollar
             if not t_scores.empty:
                 t_scores.set_index('Date', inplace=True)
                 t_scores = t_scores[~t_scores.index.duplicated(keep='last')]
-                # Merge the Quant Score properly so it plots
                 master_hist = master_hist.join(t_scores['Score'], how='left')
                 master_hist['Score'] = master_hist['Score'].ffill()
                 
@@ -557,7 +599,7 @@ def draw_crypto_row(coin, histories, today_date, is_watchlist=False, hide_dollar
         with cols[2]:
             fig = go.Figure()
             
-            # --- Ensure the Quant Score Line actually renders ---
+            # --- Ensures the Quant Score Line actually renders ---
             if 'Score' in master_hist.columns and not master_hist['Score'].dropna().empty:
                 fig.add_trace(go.Scatter(x=master_hist.index, y=master_hist['Score'], mode='lines', name='Quant Score', line=dict(color='rgba(255, 0, 255, 0.4)', width=2, dash='dot'), yaxis='y2'))
 
