@@ -8,6 +8,7 @@ import base64
 import os
 import csv
 import requests
+import time
 from datetime import datetime
 try:
     from pytrends.request import TrendReq
@@ -263,6 +264,12 @@ if st.session_state.crypto_portfolio:
 def get_crypto_data(port_dict, global_fng_val):
     if not port_dict: return [], {}, 0 
     
+    # --- RATE LIMIT FIX: CREATE CUSTOM REQUESTS SESSION WITH BROWSER USER-AGENT ---
+    yf_session = requests.Session()
+    yf_session.headers.update({
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36"
+    })
+    
     portfolio_data = []
     all_histories = {} 
     total_value = 0
@@ -271,9 +278,15 @@ def get_crypto_data(port_dict, global_fng_val):
         yf_ticker = get_yf_ticker(display_ticker)
         
         shares, avg_price = data.get('shares', 0), data.get('avg_price', 0)
-        coin = yf.Ticker(yf_ticker)
+        
+        # --- PASS SESSION INTO YFINANCE TO BYPASS BOTS BLOCK ---
+        coin = yf.Ticker(yf_ticker, session=yf_session)
         
         hist = coin.history(period='max')
+        
+        # --- SPEED BUMPER: PAUSE FOR HALF A SECOND SO WE DON'T SPAM THE API ---
+        time.sleep(0.5)
+        
         if hist.empty: continue
             
         current_price = hist['Close'].iloc[-1]
@@ -723,7 +736,7 @@ global_universe = [
     'XLM', 'APT', 'OP', 'INJ', 'FIL', 'LDO', 'AR', 'RNDR', 'FTM', 'HBAR', 'PEPE', 'SUI', 'TAO'
 ]
 
-if st.checkbox("Run Crypto Market Scan (Takes ~10 seconds)"):
+if st.checkbox("Run Crypto Market Scan (Takes ~15 seconds)"):
     scan_dict = {ticker: {} for ticker in global_universe}
     with st.spinner("Scanning global assets..."):
         market_data, market_hist, _ = get_crypto_data(scan_dict, fng_val)
