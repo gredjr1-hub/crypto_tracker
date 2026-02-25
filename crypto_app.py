@@ -36,6 +36,7 @@ def get_yf_ticker(symbol):
     return YF_TICKER_MAP.get(clean_symbol, f"{clean_symbol}-USD")
 
 # --- PROJECT PROMISE & UTILITY TIERS ---
+# APT REMOVED
 CRYPTO_TIERS = {
     'BTC': 1, 'ETH': 1, 
     'SOL': 2, 'ADA': 2, 'AVAX': 2, 'DOT': 2, 'LINK': 2, 'NEAR': 2, 'OP': 2, 'INJ': 2, 'XRP': 2, 'BNB': 2, 'TRX': 2, 'LTC': 2, 'SUI': 2, 'TAO': 2,
@@ -44,6 +45,7 @@ CRYPTO_TIERS = {
 }
 
 # --- QUALITATIVE FUNDAMENTAL DATA & MACRO TARGETS ---
+# APT REMOVED
 CRYPTO_META = {
     'BTC': {'desc': "The decentralized digital gold.", 'utility': 95, 'decentralization': 100, 'staked': 0, 'target': 150000, 'trend_term': "Bitcoin"},
     'ETH': {'desc': "The leading smart contract platform.", 'utility': 98, 'decentralization': 85, 'staked': 27, 'target': 8000, 'trend_term': "Ethereum"},
@@ -353,6 +355,11 @@ def get_crypto_data(port_dict, global_fng_val):
         score = 30.0 
         risk_points = 0
         
+        # Isolate dynamic points for the simulation loop later
+        upside_pts = 0
+        dd_pts = 0
+        sma_pts = 0
+        
         tier = CRYPTO_TIERS.get(display_ticker, 4)
         meta = CRYPTO_META.get(display_ticker, {'desc': 'No custom fundamentals available. Treat as high-risk altcoin.', 'utility': 30, 'decentralization': 40, 'staked': 0, 'target': 0, 'trend_term': f"{display_ticker} Crypto"})
         
@@ -456,81 +463,53 @@ def get_crypto_data(port_dict, global_fng_val):
 
         score = max(0, min(100, int(score))) 
         breakdown.append(f"---\n🎯 **Holistic Quant Score: {score}/100**")
-        
+
         # --- TARGET BUY PRICE SIMULATION ---
         target_buy_price = None
         if 40 <= score < 80:
+            # Strip out the dynamic price-based points to find the static base score
+            static_score_base = score - upside_pts - dd_pts - sma_pts
             sim_price = current_price
             min_price = current_price * 0.05
-            step = current_price * 0.005 # 0.5% drops
+            step = current_price * 0.005 # Step down by 0.5% increments
             
             while sim_price > min_price:
                 sim_price -= step
-                sim_s = 30.0
+                sim_s = static_score_base
                 
-                # Static Metric Recalculation
-                if meta['utility'] >= 85: sim_s += 5
-                elif meta['utility'] < 50: sim_s -= 10
-                if meta['decentralization'] >= 80: sim_s += 5
-                elif meta['decentralization'] <= 50: sim_s -= 10
-                if meta['staked'] >= 50: sim_s += 10
-                elif meta['staked'] >= 20: sim_s += 5
-                if google_fomo is not None:
-                    if google_fomo >= 80: sim_s -= 20
-                    elif google_fomo <= 20: sim_s += 5
-                if sma_50 > 0 and sma_200 > 0:
-                    if sma_50 > sma_200: sim_s += 5
-                    else: sim_s -= 10
-                if isinstance(rsi_14, (float, int)):
-                    if rsi_14 < 30: sim_s += 10
-                    elif rsi_14 < 40: sim_s += 5
-                    elif rsi_14 < 55: sim_s += 0
-                    elif rsi_14 < 65: sim_s += -5
-                    elif rsi_14 < 75: sim_s += -15
-                    else: sim_s += -25
-                if obv_trend == "Accumulating": sim_s += 5
-                elif obv_trend == "Distributing": sim_s -= 5
-                if isinstance(macd_val, (float, int)) and isinstance(sig_val, (float, int)):
-                    if macd_val > sig_val: sim_s += 5
-                    else: sim_s -= 5
-                if global_fng_val > 75: sim_s += -15
-                elif global_fng_val > 60: sim_s += -5
-                elif global_fng_val < 30: sim_s += 10
-                if volatility > 100: sim_s -= 5
-                elif volatility < 40: sim_s += 5
-
-                # Dynamic Metric Recalculation
+                # 1. Recalculate Upside
                 if meta['target'] > 0:
-                    upside = ((meta['target'] - sim_price) / sim_price) * 100
-                    if upside <= 0: sim_s += -15
-                    elif upside <= 30: sim_s += -15 + (upside / 30.0) * 15
-                    elif upside <= 200: sim_s += ((upside - 30) / 170.0) * 15
+                    sim_upside = ((meta['target'] - sim_price) / sim_price) * 100
+                    if sim_upside <= 0: sim_s += -15
+                    elif sim_upside <= 30: sim_s += -15 + (sim_upside / 30.0) * 15
+                    elif sim_upside <= 200: sim_s += ((sim_upside - 30) / 170.0) * 15
                     else: sim_s += 15
-                    
+                
+                # 2. Recalculate Drawdown
                 sim_dd = ((sim_price - ath) / ath) * 100 if ath > 0 else 0
-                dd_abs = abs(sim_dd)
+                sim_dd_abs = abs(sim_dd)
                 if tier <= 2:
-                    if dd_abs <= 15: sim_s += -10
-                    elif dd_abs <= 40: sim_s += 0
-                    elif dd_abs <= 75: sim_s += 10
+                    if sim_dd_abs <= 15: sim_s += -10
+                    elif sim_dd_abs <= 40: sim_s += 0
+                    elif sim_dd_abs <= 75: sim_s += 10
                     else: sim_s += 20
                 elif tier == 3: 
-                    if dd_abs <= 20: sim_s += -15
-                    elif dd_abs <= 60: sim_s += 0
+                    if sim_dd_abs <= 20: sim_s += -15
+                    elif sim_dd_abs <= 60: sim_s += 0
                     else: sim_s += 5
                 else: 
-                    if dd_abs > 80: sim_s -= 20
-
+                    if sim_dd_abs > 80: sim_s -= 20
+                
+                # 3. Recalculate SMA Distance
                 if sma_200 != 0 and sim_price > 0:
-                    sma_dist = ((sim_price - sma_200) / sma_200) * 100
-                    if sma_dist > 40: sim_s += -20
-                    elif sma_dist > 15: sim_s += -10
-                    elif sma_dist >= 0: sim_s += 5
-                    elif sma_dist >= -15: sim_s += 5
+                    sim_sma_dist = ((sim_price - sma_200) / sma_200) * 100
+                    if sim_sma_dist > 40: sim_s += -20
+                    elif sim_sma_dist > 15: sim_s += -10
+                    elif sim_sma_dist >= 0: sim_s += 5
+                    elif sim_sma_dist >= -15: sim_s += 5
                     else: sim_s += -15
-
-                sim_score = max(0, min(100, int(sim_s)))
-                if sim_score >= 80:
+                
+                if max(0, min(100, int(sim_s))) >= 80:
                     target_buy_price = round(sim_price, 6)
                     break
         
@@ -605,7 +584,6 @@ def render_score_card(coin, today_date, score_history=None, is_watchlist=False, 
             ninety_days_ago = today_date - timedelta(days=90)
             t_scores_quarter = t_scores[t_scores['Date'] >= ninety_days_ago].sort_values('Date')
             if not t_scores_quarter.empty:
-                # Need to convert to numeric to calculate the diff safely
                 t_scores_quarter['Score'] = pd.to_numeric(t_scores_quarter['Score'], errors='coerce')
                 oldest_score = int(t_scores_quarter.iloc[0]['Score'])
                 current_score = int(coin['Score'])
@@ -637,8 +615,9 @@ def render_score_card(coin, today_date, score_history=None, is_watchlist=False, 
         
         st.write(f"**Price:** {price_format.format(price_val)}")
         
+        # Display textual target price in the UI Card
         target_buy = coin.get('Target_Buy')
-        if target_buy:
+        if target_buy is not None:
             st.markdown(f"**Buy Target (80+):** :green[**{price_format.format(target_buy)}**]")
             
         dd = coin.get('Drawdown', 0)
@@ -718,13 +697,12 @@ def draw_crypto_row(coin, histories, today_date, is_watchlist=False, hide_dollar
     master_hist = histories.get(ticker)
     
     if master_hist is not None and not master_hist.empty:
-        
         master_hist = master_hist.tail(730).copy()
 
         if score_history is not None and not score_history.empty and 'Ticker' in score_history.columns:
             t_scores = score_history[score_history['Ticker'] == ticker].copy()
             if not t_scores.empty:
-                # Force Score to numeric so plotting doesn't fail
+                # Force Score to numeric to fix the graphing bug
                 t_scores['Score'] = pd.to_numeric(t_scores['Score'], errors='coerce')
                 
                 t_scores['Date'] = pd.to_datetime(t_scores['Date']).dt.normalize()
@@ -735,7 +713,7 @@ def draw_crypto_row(coin, histories, today_date, is_watchlist=False, hide_dollar
                 master_hist = master_hist.reset_index().merge(t_scores[['Score']], left_on='temp_date', right_index=True, how='left').set_index('Date')
                 master_hist.drop(columns=['temp_date'], inplace=True)
                 
-        # Inject today's live score to ensure there is always at least one point to plot
+        # Inject today's live score to ensure the line connects to the current day
         if 'Score' not in master_hist.columns:
             master_hist['Score'] = np.nan
         master_hist.loc[master_hist.index[-1], 'Score'] = coin['Score']
@@ -756,13 +734,19 @@ def draw_crypto_row(coin, histories, today_date, is_watchlist=False, hide_dollar
 
             fig.add_trace(go.Scatter(x=master_hist.index, y=master_hist['Close'], mode='lines', name='Price', line=dict(color='#2ca02c', width=2.5)))
             
-            if '200_WMA' in master_hist.columns and not master_hist['200_WMA'].dropna().empty:
-                fig.add_trace(go.Scatter(x=master_hist.index, y=master_hist['200_WMA'], mode='lines', name='200 WMA', line=dict(color='darkorange', width=2, dash='dash')))
-            if '50_SMA' in master_hist.columns and not master_hist['50_SMA'].dropna().empty:
-                fig.add_trace(go.Scatter(x=master_hist.index, y=master_hist['50_SMA'], mode='lines', name='50 SMA', line=dict(color='gold', width=1.5, dash='dot')))
-            if '200_SMA' in master_hist.columns and not master_hist['200_SMA'].dropna().empty:
-                fig.add_trace(go.Scatter(x=master_hist.index, y=master_hist['200_SMA'], mode='lines', name='200 SMA', line=dict(color='mediumpurple', width=2, dash='dash')))
-            
+            # --- GREEN LINE: TARGET BUY PRICE ---
+            if coin.get('Target_Buy') is not None:
+                fig.add_hline(
+                    y=coin['Target_Buy'], 
+                    line_dash="dash", 
+                    line_color="lime", 
+                    line_width=2, 
+                    opacity=0.9,
+                    annotation_text="Target Buy (80+)", 
+                    annotation_position="bottom right",
+                    annotation_font_color="lime"
+                )
+
             if coin['Avg'] > 0:
                 fig.add_hline(y=coin['Avg'], line_dash="dot", line_color="deepskyblue", line_width=2, opacity=0.8)
             
@@ -862,6 +846,7 @@ if st.checkbox("Run Crypto Market Scan (Takes ~15 seconds)"):
         df_market = pd.DataFrame(market_data)
         df_top10 = df_market.sort_values(by=['Score', 'Drawdown'], ascending=[False, True]).head(10)
         
+        # ADDED TARGET BUY TO EXPORT
         export_cols = ['Ticker', 'Price', 'Target_Buy', 'Score', 'Decision', 'Risk', 'Drawdown', 'RSI', 'Vol']
         df_export = df_top10[export_cols].copy()
         
@@ -887,6 +872,7 @@ if st.session_state.crypto_portfolio:
             
         with col_export:
             df_port = pd.DataFrame(data)
+            # ADDED TARGET BUY TO EXPORT
             port_cols = ['Ticker', 'Shares', 'Avg', 'Price', 'Target_Buy', 'Score', 'Decision', 'Risk', 'Drawdown', 'RSI']
             csv_port = df_port[port_cols].to_csv(index=False).encode('utf-8')
             st.download_button("💾 Export Portfolio Grades", data=csv_port, file_name=f"My_Crypto_Grades_{today.strftime('%Y-%m-%d')}.csv", mime="text/csv")
