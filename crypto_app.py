@@ -456,7 +456,7 @@ def get_crypto_data(port_dict, global_fng_val):
 
         score = max(0, min(100, int(score))) 
         breakdown.append(f"---\n🎯 **Holistic Quant Score: {score}/100**")
-
+        
         # --- TARGET BUY PRICE SIMULATION ---
         target_buy_price = None
         if 40 <= score < 80:
@@ -549,7 +549,8 @@ def get_crypto_data(port_dict, global_fng_val):
         
         portfolio_data.append({
             'Ticker': display_ticker, 'Val': val, 'Price': current_price, 'Shares': shares, 'Avg': avg_price,
-            'Target_Buy': target_buy_price, 'Drawdown': drawdown, 'ATH': ath, 'SMA_50': sma_50, 'SMA_200': sma_200,
+            'Target_Buy': target_buy_price,
+            'Drawdown': drawdown, 'ATH': ath, 'SMA_50': sma_50, 'SMA_200': sma_200,
             'RSI': rsi_14, 'MACD': macd_val, 'MACD_Sig': sig_val, 'Vol': volatility, 'Tier': tier, 'OBV': obv_trend,
             'Meta_Desc': meta['desc'], 'Meta_Util': meta['utility'], 'Meta_Decen': meta['decentralization'], 
             'Meta_Staked': meta['staked'], 'Meta_Target': meta['target'], 'Meta_Google': google_fomo,
@@ -604,6 +605,8 @@ def render_score_card(coin, today_date, score_history=None, is_watchlist=False, 
             ninety_days_ago = today_date - timedelta(days=90)
             t_scores_quarter = t_scores[t_scores['Date'] >= ninety_days_ago].sort_values('Date')
             if not t_scores_quarter.empty:
+                # Need to convert to numeric to calculate the diff safely
+                t_scores_quarter['Score'] = pd.to_numeric(t_scores_quarter['Score'], errors='coerce')
                 oldest_score = int(t_scores_quarter.iloc[0]['Score'])
                 current_score = int(coin['Score'])
                 diff = current_score - oldest_score
@@ -633,11 +636,11 @@ def render_score_card(coin, today_date, score_history=None, is_watchlist=False, 
         else: price_format = "${:,.2f}"
         
         st.write(f"**Price:** {price_format.format(price_val)}")
-
+        
         target_buy = coin.get('Target_Buy')
         if target_buy:
             st.markdown(f"**Buy Target (80+):** :green[**{price_format.format(target_buy)}**]")
-        
+            
         dd = coin.get('Drawdown', 0)
         ath = coin.get('ATH', 0)
         st.write(f"**2Y ATH:** {price_format.format(ath)}")
@@ -721,6 +724,9 @@ def draw_crypto_row(coin, histories, today_date, is_watchlist=False, hide_dollar
         if score_history is not None and not score_history.empty and 'Ticker' in score_history.columns:
             t_scores = score_history[score_history['Ticker'] == ticker].copy()
             if not t_scores.empty:
+                # Force Score to numeric so plotting doesn't fail
+                t_scores['Score'] = pd.to_numeric(t_scores['Score'], errors='coerce')
+                
                 t_scores['Date'] = pd.to_datetime(t_scores['Date']).dt.normalize()
                 t_scores.set_index('Date', inplace=True)
                 t_scores = t_scores[~t_scores.index.duplicated(keep='last')]
@@ -728,7 +734,12 @@ def draw_crypto_row(coin, histories, today_date, is_watchlist=False, hide_dollar
                 master_hist['temp_date'] = master_hist.index.normalize()
                 master_hist = master_hist.reset_index().merge(t_scores[['Score']], left_on='temp_date', right_index=True, how='left').set_index('Date')
                 master_hist.drop(columns=['temp_date'], inplace=True)
-                master_hist['Score'] = master_hist['Score'].ffill()
+                
+        # Inject today's live score to ensure there is always at least one point to plot
+        if 'Score' not in master_hist.columns:
+            master_hist['Score'] = np.nan
+        master_hist.loc[master_hist.index[-1], 'Score'] = coin['Score']
+        master_hist['Score'] = master_hist['Score'].ffill()
                 
         if len(master_hist) > 20:
             master_hist['BB_Upper'], master_hist['BB_Lower'] = calculate_bbands(master_hist['Close'])
