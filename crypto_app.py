@@ -38,7 +38,7 @@ def get_yf_ticker(symbol):
 # --- PROJECT PROMISE & UTILITY TIERS ---
 CRYPTO_TIERS = {
     'BTC': 1, 'ETH': 1, 
-    'SOL': 2, 'ADA': 2, 'AVAX': 2, 'DOT': 2, 'LINK': 2, 'NEAR': 2, 'APT': 2, 'OP': 2, 'INJ': 2, 'XRP': 2, 'BNB': 2, 'TRX': 2, 'LTC': 2, 'SUI': 2, 'TAO': 2,
+    'SOL': 2, 'ADA': 2, 'AVAX': 2, 'DOT': 2, 'LINK': 2, 'NEAR': 2, 'OP': 2, 'INJ': 2, 'XRP': 2, 'BNB': 2, 'TRX': 2, 'LTC': 2, 'SUI': 2, 'TAO': 2,
     'FIL': 2, 'LDO': 2, 'AR': 2, 'RNDR': 2, 'HBAR': 2, 'TON': 2, 'BCH': 2, 'XLM': 2,
     'DOGE': 3, 'SHIB': 3, 'PEPE': 3, 'FLOKI': 3, 'BONK': 3, 'WIF': 3 
 }
@@ -60,7 +60,6 @@ CRYPTO_META = {
     'DOT': {'desc': "Interoperability network connecting bespoke parachains.", 'utility': 80, 'decentralization': 75, 'staked': 52, 'target': 25, 'trend_term': "Polkadot Crypto"},
     'MATIC': {'desc': "Ethereum's premier L2 scaling solution (Polygon).", 'utility': 85, 'decentralization': 60, 'staked': 35, 'target': 2.00, 'trend_term': "Polygon Crypto"},
     'NEAR': {'desc': "Highly scalable, sharded Proof-of-Stake L1.", 'utility': 80, 'decentralization': 65, 'staked': 45, 'target': 15, 'trend_term': "Near Protocol"},
-    'APT': {'desc': "High-performance L1 spun out of Facebook's Diem project.", 'utility': 80, 'decentralization': 40, 'staked': 80, 'target': 30, 'trend_term': "Aptos Crypto"},
     'OP': {'desc': "Optimistic rollup L2 scaling network for Ethereum.", 'utility': 85, 'decentralization': 50, 'staked': 20, 'target': 8, 'trend_term': "Optimism Crypto"},
     'INJ': {'desc': "App-specific L1 built for decentralized finance.", 'utility': 80, 'decentralization': 65, 'staked': 50, 'target': 60, 'trend_term': "Injective Protocol"},
     'FIL': {'desc': "Decentralized storage network designed to store humanity's info.", 'utility': 85, 'decentralization': 70, 'staked': 30, 'target': 15, 'trend_term': "Filecoin"},
@@ -457,6 +456,83 @@ def get_crypto_data(port_dict, global_fng_val):
 
         score = max(0, min(100, int(score))) 
         breakdown.append(f"---\n🎯 **Holistic Quant Score: {score}/100**")
+
+        # --- TARGET BUY PRICE SIMULATION ---
+        target_buy_price = None
+        if 40 <= score < 80:
+            sim_price = current_price
+            min_price = current_price * 0.05
+            step = current_price * 0.005 # 0.5% drops
+            
+            while sim_price > min_price:
+                sim_price -= step
+                sim_s = 30.0
+                
+                # Static Metric Recalculation
+                if meta['utility'] >= 85: sim_s += 5
+                elif meta['utility'] < 50: sim_s -= 10
+                if meta['decentralization'] >= 80: sim_s += 5
+                elif meta['decentralization'] <= 50: sim_s -= 10
+                if meta['staked'] >= 50: sim_s += 10
+                elif meta['staked'] >= 20: sim_s += 5
+                if google_fomo is not None:
+                    if google_fomo >= 80: sim_s -= 20
+                    elif google_fomo <= 20: sim_s += 5
+                if sma_50 > 0 and sma_200 > 0:
+                    if sma_50 > sma_200: sim_s += 5
+                    else: sim_s -= 10
+                if isinstance(rsi_14, (float, int)):
+                    if rsi_14 < 30: sim_s += 10
+                    elif rsi_14 < 40: sim_s += 5
+                    elif rsi_14 < 55: sim_s += 0
+                    elif rsi_14 < 65: sim_s += -5
+                    elif rsi_14 < 75: sim_s += -15
+                    else: sim_s += -25
+                if obv_trend == "Accumulating": sim_s += 5
+                elif obv_trend == "Distributing": sim_s -= 5
+                if isinstance(macd_val, (float, int)) and isinstance(sig_val, (float, int)):
+                    if macd_val > sig_val: sim_s += 5
+                    else: sim_s -= 5
+                if global_fng_val > 75: sim_s += -15
+                elif global_fng_val > 60: sim_s += -5
+                elif global_fng_val < 30: sim_s += 10
+                if volatility > 100: sim_s -= 5
+                elif volatility < 40: sim_s += 5
+
+                # Dynamic Metric Recalculation
+                if meta['target'] > 0:
+                    upside = ((meta['target'] - sim_price) / sim_price) * 100
+                    if upside <= 0: sim_s += -15
+                    elif upside <= 30: sim_s += -15 + (upside / 30.0) * 15
+                    elif upside <= 200: sim_s += ((upside - 30) / 170.0) * 15
+                    else: sim_s += 15
+                    
+                sim_dd = ((sim_price - ath) / ath) * 100 if ath > 0 else 0
+                dd_abs = abs(sim_dd)
+                if tier <= 2:
+                    if dd_abs <= 15: sim_s += -10
+                    elif dd_abs <= 40: sim_s += 0
+                    elif dd_abs <= 75: sim_s += 10
+                    else: sim_s += 20
+                elif tier == 3: 
+                    if dd_abs <= 20: sim_s += -15
+                    elif dd_abs <= 60: sim_s += 0
+                    else: sim_s += 5
+                else: 
+                    if dd_abs > 80: sim_s -= 20
+
+                if sma_200 != 0 and sim_price > 0:
+                    sma_dist = ((sim_price - sma_200) / sma_200) * 100
+                    if sma_dist > 40: sim_s += -20
+                    elif sma_dist > 15: sim_s += -10
+                    elif sma_dist >= 0: sim_s += 5
+                    elif sma_dist >= -15: sim_s += 5
+                    else: sim_s += -15
+
+                sim_score = max(0, min(100, int(sim_s)))
+                if sim_score >= 80:
+                    target_buy_price = round(sim_price, 6)
+                    break
         
         if score >= 80: decision, d_color = "ACCUMULATE HEAVILY 🟩", "#28a745"
         elif score >= 60: decision, d_color = "DCA / HOLD 🟨", "#17a2b8"
@@ -473,7 +549,7 @@ def get_crypto_data(port_dict, global_fng_val):
         
         portfolio_data.append({
             'Ticker': display_ticker, 'Val': val, 'Price': current_price, 'Shares': shares, 'Avg': avg_price,
-            'Drawdown': drawdown, 'ATH': ath, 'SMA_50': sma_50, 'SMA_200': sma_200,
+            'Target_Buy': target_buy_price, 'Drawdown': drawdown, 'ATH': ath, 'SMA_50': sma_50, 'SMA_200': sma_200,
             'RSI': rsi_14, 'MACD': macd_val, 'MACD_Sig': sig_val, 'Vol': volatility, 'Tier': tier, 'OBV': obv_trend,
             'Meta_Desc': meta['desc'], 'Meta_Util': meta['utility'], 'Meta_Decen': meta['decentralization'], 
             'Meta_Staked': meta['staked'], 'Meta_Target': meta['target'], 'Meta_Google': google_fomo,
@@ -557,6 +633,10 @@ def render_score_card(coin, today_date, score_history=None, is_watchlist=False, 
         else: price_format = "${:,.2f}"
         
         st.write(f"**Price:** {price_format.format(price_val)}")
+
+        target_buy = coin.get('Target_Buy')
+        if target_buy:
+            st.markdown(f"**Buy Target (80+):** :green[**{price_format.format(target_buy)}**]")
         
         dd = coin.get('Drawdown', 0)
         ath = coin.get('ATH', 0)
@@ -759,7 +839,7 @@ st.markdown("Live technical scan of the top layer-1s, layer-2s, and blue-chip to
 global_universe = [
     'BTC', 'ETH', 'BNB', 'SOL', 'XRP', 'ADA', 'AVAX', 'DOGE', 'DOT',
     'TRX', 'LINK', 'TON', 'SHIB', 'LTC', 'BCH', 'NEAR',
-    'XLM', 'APT', 'OP', 'INJ', 'FIL', 'LDO', 'AR', 'RNDR', 'HBAR', 'PEPE', 'SUI', 'TAO'
+    'XLM', 'OP', 'INJ', 'FIL', 'LDO', 'AR', 'RNDR', 'HBAR', 'PEPE', 'SUI', 'TAO'
 ]
 
 if st.checkbox("Run Crypto Market Scan (Takes ~15 seconds)"):
@@ -771,7 +851,7 @@ if st.checkbox("Run Crypto Market Scan (Takes ~15 seconds)"):
         df_market = pd.DataFrame(market_data)
         df_top10 = df_market.sort_values(by=['Score', 'Drawdown'], ascending=[False, True]).head(10)
         
-        export_cols = ['Ticker', 'Price', 'Score', 'Decision', 'Risk', 'Drawdown', 'RSI', 'Vol']
+        export_cols = ['Ticker', 'Price', 'Target_Buy', 'Score', 'Decision', 'Risk', 'Drawdown', 'RSI', 'Vol']
         df_export = df_top10[export_cols].copy()
         
         csv_data = df_export.to_csv(index=False).encode('utf-8')
@@ -796,7 +876,7 @@ if st.session_state.crypto_portfolio:
             
         with col_export:
             df_port = pd.DataFrame(data)
-            port_cols = ['Ticker', 'Shares', 'Avg', 'Price', 'Score', 'Decision', 'Risk', 'Drawdown', 'RSI']
+            port_cols = ['Ticker', 'Shares', 'Avg', 'Price', 'Target_Buy', 'Score', 'Decision', 'Risk', 'Drawdown', 'RSI']
             csv_port = df_port[port_cols].to_csv(index=False).encode('utf-8')
             st.download_button("💾 Export Portfolio Grades", data=csv_port, file_name=f"My_Crypto_Grades_{today.strftime('%Y-%m-%d')}.csv", mime="text/csv")
             
