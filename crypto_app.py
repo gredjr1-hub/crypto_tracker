@@ -36,7 +36,6 @@ def get_yf_ticker(symbol):
     return YF_TICKER_MAP.get(clean_symbol, f"{clean_symbol}-USD")
 
 # --- PROJECT PROMISE & UTILITY TIERS ---
-# APT REMOVED
 CRYPTO_TIERS = {
     'BTC': 1, 'ETH': 1, 
     'SOL': 2, 'ADA': 2, 'AVAX': 2, 'DOT': 2, 'LINK': 2, 'NEAR': 2, 'OP': 2, 'INJ': 2, 'XRP': 2, 'BNB': 2, 'TRX': 2, 'LTC': 2, 'SUI': 2, 'TAO': 2,
@@ -45,7 +44,6 @@ CRYPTO_TIERS = {
 }
 
 # --- QUALITATIVE FUNDAMENTAL DATA & MACRO TARGETS ---
-# APT REMOVED
 CRYPTO_META = {
     'BTC': {'desc': "The decentralized digital gold.", 'utility': 95, 'decentralization': 100, 'staked': 0, 'target': 150000, 'trend_term': "Bitcoin"},
     'ETH': {'desc': "The leading smart contract platform.", 'utility': 98, 'decentralization': 85, 'staked': 27, 'target': 8000, 'trend_term': "Ethereum"},
@@ -313,7 +311,6 @@ def get_crypto_data(port_dict, global_fng_val):
             
         current_price = hist['Close'].iloc[-1]
         hist.index = hist.index.tz_localize(None)
-        all_histories[display_ticker] = hist
             
         volatility, drawdown, ath = 0.0, 0.0, 0.0
         rsi_14, macd_val, sig_val, bb_upper, bb_lower = 'N/A', 'N/A', 'N/A', 'N/A', 'N/A'
@@ -326,6 +323,8 @@ def get_crypto_data(port_dict, global_fng_val):
             ath = hist_2y['Close'].max() if not hist_2y.empty else hist['Close'].max()
             drawdown = ((current_price - ath) / ath) * 100 if ath > 0 else 0
             
+            # --- THIS IS THE FIX ---
+            # Appending these metrics BEFORE saving to all_histories
             hist['200_WMA'] = hist['Close'].rolling(window=1400).mean()
             hist['50_SMA'] = hist['Close'].rolling(window=50).mean()
             hist['200_SMA'] = hist['Close'].rolling(window=200).mean()
@@ -350,6 +349,9 @@ def get_crypto_data(port_dict, global_fng_val):
                 rsi_14 = round(rsi_series.iloc[-1], 2)
                 macd_val, sig_val = macd_line.iloc[-1], signal_line.iloc[-1]
                 bb_upper, bb_lower = upper_b.iloc[-1], lower_b.iloc[-1]
+            
+            # Save the fully built dataframe so the graph renderer has the MAs
+            all_histories[display_ticker] = hist.copy()
 
         # --- THE ALGORITHM ---
         score = 30.0 
@@ -709,8 +711,10 @@ def draw_crypto_row(coin, histories, today_date, is_watchlist=False, hide_dollar
                 t_scores.set_index('Date', inplace=True)
                 t_scores = t_scores[~t_scores.index.duplicated(keep='last')]
                 
+                # Dynamic index name mapping to protect the merge
+                index_name = master_hist.index.name if master_hist.index.name else 'index'
                 master_hist['temp_date'] = master_hist.index.normalize()
-                master_hist = master_hist.reset_index().merge(t_scores[['Score']], left_on='temp_date', right_index=True, how='left').set_index('Date')
+                master_hist = master_hist.reset_index().merge(t_scores[['Score']], left_on='temp_date', right_index=True, how='left').set_index(index_name)
                 master_hist.drop(columns=['temp_date'], inplace=True)
                 
         # Inject today's live score to ensure the line connects to the current day
@@ -746,6 +750,14 @@ def draw_crypto_row(coin, histories, today_date, is_watchlist=False, hide_dollar
                     annotation_position="bottom right",
                     annotation_font_color="lime"
                 )
+
+            # --- RESTORED MOVING AVERAGES ---
+            if '200_WMA' in master_hist.columns and not master_hist['200_WMA'].dropna().empty:
+                fig.add_trace(go.Scatter(x=master_hist.index, y=master_hist['200_WMA'], mode='lines', name='200 WMA', line=dict(color='darkorange', width=2, dash='dash')))
+            if '50_SMA' in master_hist.columns and not master_hist['50_SMA'].dropna().empty:
+                fig.add_trace(go.Scatter(x=master_hist.index, y=master_hist['50_SMA'], mode='lines', name='50 SMA', line=dict(color='gold', width=1.5, dash='dot')))
+            if '200_SMA' in master_hist.columns and not master_hist['200_SMA'].dropna().empty:
+                fig.add_trace(go.Scatter(x=master_hist.index, y=master_hist['200_SMA'], mode='lines', name='200 SMA', line=dict(color='mediumpurple', width=2, dash='dash')))
 
             if coin['Avg'] > 0:
                 fig.add_hline(y=coin['Avg'], line_dash="dot", line_color="deepskyblue", line_width=2, opacity=0.8)
